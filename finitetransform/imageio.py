@@ -99,8 +99,9 @@ def immask(img, mask, P, Q):
     maskArray = ma.make_mask(mask)
     imgMasked = ma.array(img, mask=~maskArray)
     
-    return imgMasked.compressed().reshape((P,Q))
-    
+    # return imgMasked.compressed().reshape((P,Q))
+    return imgMasked
+
 def immse(img1, img2):
     '''
     Compute the MSE of two images

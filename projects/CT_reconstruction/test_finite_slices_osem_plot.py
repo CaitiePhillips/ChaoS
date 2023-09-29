@@ -64,8 +64,8 @@ custom_cmap = LinearSegmentedColormap.from_list("black_red", colors, N=256)
 
 #parameter sets (K, k, i, s, h)
 #phantom
-#parameters = [1.2, 1, 381, 30, 8.0] #r=2
-parameters = [0.4, 1, 760, 12, 12.0] #r=4
+parameters = [1.2, 1, 381, 30, 8.0] #r=2
+# parameters = [0.4, 1, 760, 12, 12.0] #r=4
 #cameraman
 #parameters = [1.2, 1, 381, 30, 8.0] #r=2
 
@@ -203,214 +203,102 @@ axis[1].axis("off")
 axis[2].imshow(np.abs(result), cmap='gray')
 axis[2].set_title("Recon")
 axis[2].axis("off")
-plt.show()
-# #-------------
-# # Measure finite slice
-# from scipy import ndimage
-
-# print("Measuring slices")
-# drtSpace = np.zeros((p+1, p), floatType)
-# for lines, mValues in zip(subsetsLines, subsetsMValues):
-#     for i, line in enumerate(lines):
-#         u, v = line
-#         sliceReal = ndimage.map_coordinates(np.real(fftLenaShifted), [u,v])
-#         sliceImag = ndimage.map_coordinates(np.imag(fftLenaShifted), [u,v])
-#         slice = sliceReal+1j*sliceImag
-#     #    print("slice", i, ":", slice)
-#         finiteProjection = fftpack.ifft(slice) # recover projection using slice theorem
-#         drtSpace[mValues[i],:] = finiteProjection
-# #print("drtSpace:", drtSpace)
-
-# #-------------------------------
-# #define MLEM
-# def osem_expand_complex(iterations, p, g_j, os_mValues, projector, backprojector, image, mask, epsilon=1e3, dtype=np.int32):
-#     '''
-#     # Gary's implementation
-#     # From Lalush and Wernick;
-#     # f^\hat <- (f^\hat / |\sum h|) * \sum h * (g_j / g)          ... (*)
-#     # where g = \sum (h f^\hat)                                   ... (**)
-#     #
-#     # self.f is the current estimate f^\hat
-#     # The following g from (**) is equivalent to g = \sum (h f^\hat)
-#     '''
-#     norm = False
-#     center = False
-#     fdtype = floatType
-#     f = np.ones((p,p), fdtype)
-    
-#     mses = []
-#     psnrs = []
-#     ssims = []
-#     for i in range(0, iterations):
-#         print("Iteration:", i)
-#         for j, mValues in enumerate(os_mValues):
-# #            print("Subset:", j)
-#             muFinite = len(mValues)
-            
-#             g = projector(f, p, fdtype, mValues)
-        
-#             # form parenthesised term (g_j / g) from (*)
-#             r = np.copy(g_j)
-#             for m in mValues:
-# #                r[m,:] = g_j[m,:] / g[m,:]
-#                 for y in range(p):
-#                     r[m,y] /= g[m,y]
-        
-#             # backproject to form \sum h * (g_j / g)
-#             g_r = backprojector(r, p, norm, center, 1, 0, mValues) / muFinite
-        
-#             # Renormalise backprojected term / \sum h)
-#             # Normalise the individual pixels in the reconstruction
-#             f *= g_r
-        
-#         if smoothReconMode > 0 and i % smoothIncrement == 0 and i > 0: #smooth to stem growth of noise
-#             if smoothReconMode == 1:
-#                 print("Smooth TV")
-#                 f = denoise_tv_chambolle(f, 0.02, multichannel=False)
-#             elif smoothReconMode == 2:
-#                 h = parameters[4]
-#                 if i > smoothMaxIteration:
-#                     h /= 2.0
-#                 if i > smoothMaxIteration2:
-#                     h /= 4.0
-#                 print("Smooth NL h:",h)
-#                 fReal = denoise_nl_means(np.real(f), patch_size=5, patch_distance=11, h=h, multichannel=False, fast_mode=True).astype(fdtype)
-#                 fImag = denoise_nl_means(np.imag(f), patch_size=5, patch_distance=11, h=h, multichannel=False, fast_mode=True).astype(fdtype)
-#                 f = fReal +1j*fImag
-#             elif smoothReconMode == 3:
-#                 print("Smooth Median")
-#                 fReal = ndimage.median_filter(np.real(f), 3)
-#                 fImag = ndimage.median_filter(np.imag(f), 3)
-#             f = fReal +1j*fImag
-            
-#         if i%plotIncrement == 0:
-#             img = imageio.immask(image, mask, N, N)
-#             recon = imageio.immask(f, mask, N, N)
-#             recon = np.abs(recon)
-#             mse = imageio.immse(img, recon)
-#             psnr = imageio.impsnr(img, recon)
-#             ssim = imageio.imssim(img.astype(float), recon.astype(float))
-#             print("RMSE:", math.sqrt(mse), "PSNR:", psnr, "SSIM:", ssim)
-#             mses.append(mse)
-#             psnrs.append(psnr)
-#             ssims.append(ssim)
-        
-#     return f, mses, psnrs, ssims
-
-# #-------------------------------
-# #reconstruct test using MLEM   
-# start = time.time() #time generation
-# recon, mses, psnrs, ssims = osem_expand_complex(iterations, p, drtSpace, subsetsMValues, finite.frt_complex, finite.ifrt_complex, lena, mask)
-# recon = np.abs(recon)
-# print("Done")
-# end = time.time()
-# elapsed = end - start
-# print("OSEM Reconstruction took " + str(elapsed) + " secs or " + str(elapsed/60) + " mins in total")
-
-# mse = imageio.immse(imageio.immask(lena, mask, N, N), imageio.immask(recon, mask, N, N))
-# ssim = imageio.imssim(imageio.immask(lena, mask, N, N).astype(float), imageio.immask(recon, mask, N, N).astype(float))
-# psnr = imageio.impsnr(imageio.immask(lena, mask, N, N), imageio.immask(recon, mask, N, N))
-# print("RMSE:", math.sqrt(mse))
-# print("SSIM:", ssim)
-# print("PSNR:", psnr)
-# diff = lena - recon
-
-# #save mat file of result
-# #np.savez('result_osem.npz', recon=recon, diff=diff, psnrs=psnrs, ssims=ssims)
-# np.savez('result_phantom_osem.npz', recon=recon, diff=diff, psnrs=psnrs, ssims=ssims)
-# #np.savez('result_camera_osem.npz', recon=recon, diff=diff, psnrs=psnrs, ssims=ssims)
-
-# #plot
-# import matplotlib.pyplot as plt
-# from matplotlib.backends.backend_pdf import PdfPages
-
-# #pp = PdfPages('finite_osem_plots.pdf')
-# pp = PdfPages('finite_osem_phantom_plots.pdf')
-# #pp = PdfPages('finite_osem_camera_plots.pdf')
-
-# fig, ax = plt.subplots(figsize=(24, 9))
-
-# if plotCroppedImages:
-#     print(lena.shape)
-#     print(mask.shape)
-#     lena = imageio.immask(lena, mask, N, N)
-#     reconLena = imageio.immask(reconLena, mask, N, N)
-#     reconNoise = imageio.immask(reconNoise, mask, N, N)
-#     recon = imageio.immask(recon, mask, N, N)
-#     diff = imageio.immask(diff, mask, N, N)
-
-# plt.subplot(121)
-# rax = plt.imshow(reconLena, interpolation='nearest', cmap='gray')
-# #rax = plt.imshow(reconLena, cmap='gray')
-# rcbar = plt.colorbar(rax, cmap='gray')
-# plt.title('Image (w/ Noise)')
-# plt.subplot(122)
-# rax2 = plt.imshow(recon, interpolation='nearest', cmap='gray')
-# #rax2 = plt.imshow(recon, cmap='gray')
-# rcbar2 = plt.colorbar(rax2, cmap='gray')
-# plt.title('Reconstruction')
-# pp.savefig()
-
-# fig, ax = plt.subplots(figsize=(24, 9))
-
-
-# plt.subplot(151)
-# rax = plt.imshow(lena, interpolation='nearest', cmap='gray')
-# #rax = plt.imshow(lena, cmap='gray')
-# rcbar = plt.colorbar(rax, cmap='gray')
-# plt.title('Image')
-# plt.subplot(152)
-# rax = plt.imshow(reconLena, interpolation='nearest', cmap='gray')
-# #rax = plt.imshow(reconLena, cmap='gray')
-# rcbar = plt.colorbar(rax, cmap='gray')
-# plt.title('Image (w/ Noise)')
-# plt.subplot(153)
-# rax = plt.imshow(reconNoise, interpolation='nearest', cmap='gray')
-# #rax = plt.imshow(reconNoise, cmap='gray')
-# rcbar = plt.colorbar(rax, cmap='gray')
-# plt.title('Noise')
-# plt.subplot(154)
-# rax2 = plt.imshow(recon, interpolation='nearest', cmap='gray')
-# #rax2 = plt.imshow(recon, cmap='gray')
-# rcbar2 = plt.colorbar(rax2, cmap='gray')
-# plt.title('Reconstruction')
-# plt.subplot(155)
-# rax3 = plt.imshow(diff, interpolation='nearest', cmap='gray')
-# #rax3 = plt.imshow(diff, cmap='gray')
-# rcbar3 = plt.colorbar(rax3, cmap='gray')
-# plt.title('Reconstruction Errors')
-# pp.savefig()
-
-# #plot convergence
-# fig, ax = plt.subplots(figsize=(24, 9))
-
-# mseValues = np.array(mses)
-# psnrValues = np.array(psnrs)
-# ssimValues = np.array(ssims)
-# incX = np.arange(0, len(mses))*plotIncrement
-
-# plt.subplot(131)
-# plt.plot(incX, np.sqrt(mseValues))
-# plt.title('Error Convergence of the Finite OSEM')
-# plt.xlabel('Iterations')
-# plt.ylabel('RMSE')
-# plt.subplot(132)
-# plt.plot(incX, psnrValues)
-# plt.ylim(0, 45.0)
-# plt.title('PSNR Convergence of the Finite OSSEM')
-# plt.xlabel('Iterations')
-# plt.ylabel('PSNR')
-# plt.subplot(133)
-# plt.plot(incX, ssimValues)
-# plt.ylim(0, 1.0)
-# plt.title('Simarlity Convergence of the Finite OSSEM')
-# plt.xlabel('Iterations')
-# plt.ylabel('SSIM')
-# pp.savefig()
-# pp.close()
-
-# plt.show()
-
-# print("Complete")
 
 # %%
+#-------------------------------
+#define MLEM
+def osem_expand_complex(iterations, p, g_j, os_mValues, projector, backprojector, image, mask, epsilon=1e3, dtype=np.int32):
+    '''
+    # Gary's implementation
+    # From Lalush and Wernick;
+    # f^\hat <- (f^\hat / |\sum h|) * \sum h * (g_j / g)          ... (*)
+    # where g = \sum (h f^\hat)                                   ... (**)
+    #
+    # self.f is the current estimate f^\hat
+    # The following g from (**) is equivalent to g = \sum (h f^\hat)
+    '''
+    norm = False
+    center = False
+    fdtype = floatType
+    f = np.ones((p,p), fdtype)
+    
+    mses = []
+    psnrs = []
+    ssims = []
+    for i in range(0, iterations):
+        print("Iteration:", i)
+        for j, mValues in enumerate(os_mValues):
+#            print("Subset:", j)
+            muFinite = len(mValues)
+            
+            g = projector(f, p, fdtype, mValues)
+        
+            # form parenthesised term (g_j / g) from (*)
+            r = np.copy(g_j)
+            for m in mValues:
+#                r[m,:] = g_j[m,:] / g[m,:]
+                for y in range(p):
+                    r[m,y] /= g[m,y]
+        
+            # backproject to form \sum h * (g_j / g)
+            g_r = backprojector(r, p, norm, center, 1, 0, mValues) / muFinite
+        
+            # Renormalise backprojected term / \sum h)
+            # Normalise the individual pixels in the reconstruction
+            f *= g_r
+        
+        if smoothReconMode > 0 and i % smoothIncrement == 0 and i > 0: #smooth to stem growth of noise
+            if smoothReconMode == 1:
+                print("Smooth TV")
+                f = denoise_tv_chambolle(f, 0.02, multichannel=False)
+            elif smoothReconMode == 2:
+                h = parameters[4]
+                if i > smoothMaxIteration:
+                    h /= 2.0
+                if i > smoothMaxIteration2:
+                    h /= 4.0
+                print("Smooth NL h:",h)
+                fReal = denoise_nl_means(np.real(f), patch_size=5, patch_distance=11, h=h, multichannel=False, fast_mode=True).astype(fdtype)
+                fImag = denoise_nl_means(np.imag(f), patch_size=5, patch_distance=11, h=h, multichannel=False, fast_mode=True).astype(fdtype)
+                f = fReal +1j*fImag
+            elif smoothReconMode == 3:
+                print("Smooth Median")
+                fReal = ndimage.median_filter(np.real(f), 3)
+                fImag = ndimage.median_filter(np.imag(f), 3)
+            f = fReal +1j*fImag
+            
+        if i%plotIncrement == 0:
+            img = imageio.immask(image, mask, N, N)
+            recon = imageio.immask(f, mask, N, N)
+            recon = np.abs(recon)
+            mse = imageio.immse(img, recon)
+            psnr = imageio.impsnr(img, recon)
+            ssim = imageio.imssim(img.astype(float), recon.astype(float))
+            print("RMSE:", math.sqrt(mse), "PSNR:", psnr, "SSIM:", ssim)
+            mses.append(mse)
+            psnrs.append(psnr)
+            ssims.append(ssim)
+        
+    return f, mses, psnrs, ssims
+
+#-------------------------------
+#reconstruct test using MLEM   
+start = time.time() #time generation
+recon, mses, psnrs, ssims = osem_expand_complex(iterations, p, rt_lena, subsetsMValues, finite.frt_complex, finite.ifrt_complex, lena, mask)
+recon = np.abs(recon)
+print("Done")
+end = time.time()
+elapsed = end - start
+print("OSEM Reconstruction took " + str(elapsed) + " secs or " + str(elapsed/60) + " mins in total")
+
+fig, ax = plt.subplots(1, 2)
+
+ax[0].imshow(lena, cmap = 'gray')
+ax[0].set_title("original")
+ax[0].axis("off")
+
+ax[1].imshow(recon, cmap = 'gray')
+ax[1].set_title("recon")
+ax[1].axis("off")
+
+plt.show()

@@ -59,8 +59,14 @@ fftpack.ifft = pyfftw.interfaces.scipy_fftpack.ifft
 pyfftw.interfaces.cache.enable()
 
 
-# %%
+# helper functions -------------------------------------------------------------
 def compute_slopes(subsetsAngles, twoQuads = True): 
+        """
+        Compute gradients of given angles. 
+
+        subsetsAngles (ndarray(dtype=float, ndim=?)): array of angles
+        twoQuads (bool): one or two quadrants 
+        """
         subsetsMValues = []
         for angles in subsetsAngles:
             mValues = []
@@ -76,13 +82,20 @@ def compute_slopes(subsetsAngles, twoQuads = True):
         return subsetsMValues
 
 def fill_dft(subsetsMValues, powSpectLena): 
-    mValues = [m for mSet in subsetsMValues for m in mSet] #FIXME: this is not simple complexity wise i think
+    """
+    fill 2D FT space with projections via FST
+
+    subsetsMValues (ndarray(dtype:float, dim:?)): array of prjoection angle gradients
+    powSpectLena (ndarray(dtype:float, dim:?)): empty 2D FT Space to be filled
+    """
+    mValues = [m for mSet in subsetsMValues for m in mSet] 
     for m in mValues: 
         slice = fftpack.fft(rt_lena[m])
         radon.setSlice(m, powSpectLena, slice)
 
     powSpectLena = fftpack.fftshift(powSpectLena)
     powSpectLena = powSpectLena + np.flipud(powSpectLena) # conj symmetric
+
     return powSpectLena
 
 def osem_expand_complex(iterations, p, g_j, os_mValues, projector, backprojector, image, mask, epsilon=1e3, dtype=np.int32):
@@ -156,92 +169,126 @@ def osem_expand_complex(iterations, p, g_j, os_mValues, projector, backprojector
         
     return f
 
+
+# reconstruct data -------------------------------------------------------------
 data_dft = {}
 data_recon = {}
 data_radon = {}
 
-iterations = [5, 10]
+iterations = [1, 2, 4]
 
-for j in range(0, 2): 
-    #parameter sets (K, k, i, s, h)
-    #phantom
-    parameters = [1.2, 1, iterations[j], 30, 8.0, j] #r=2
-    #Phantom: N=256, i=381, s=30, h=8, K=1.2, k=1;
+norms = [-1, 1, 2, 100] #random, l1-norm, l2-norm, linfty-norm or max
 
-    #parameters
-    n = 257 #prime for not dyadic size
-    k = parameters[1]
-    M = int(k*n)
-    N = n 
-    K = parameters[0]
-    s = parameters[3]
-    subsetsMode = 1
+n = 257 #prime for not dyadic size
+N = n 
+subsetsMode = 1
+for l in norms:
+    for iteration_num in iterations: 
+        #should also do for different paddings p?
 
-    angles, subsetsAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,N,N,1,True,K)
-    perpAngle = farey.farey(1,0)
-    angles.append(perpAngle)
-    subsetsAngles[0].append(perpAngle)
-    p = nt.nearestPrime(M)
+        #parameter sets (K, k, i, s, h)
+        #phantom
+        parameters = [1.2, 1, iteration_num, 30, 8.0] #r=2
+        #Phantom: N=256, i=381, s=30, h=8, K=1.2, k=1;
 
-    #create test image
-    lena, mask = imageio.phantom(N, p, True, np.uint32, True)
+        #parameters
+        k = parameters[1]
+        M = int(k*n)
+        K = parameters[0]
+        s = parameters[3]
 
-    #check if Katz compliant
-    if not mojette.isKatzCriterion(N, N, angles):
-        print("Warning: Katz Criterion not met")
+        angles, subsetsAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,N,N,1,True,K, l)
+        perpAngle = farey.farey(1,0)
+        angles.append(perpAngle)
+        subsetsAngles[0].append(perpAngle)
+        p = nt.nearestPrime(M)
+
+        #create test image
+        lena, mask = imageio.phantom(N, p, True, np.uint32, True)
+
+        #check if Katz compliant
+        if not mojette.isKatzCriterion(N, N, angles):
+            print("Warning: Katz Criterion not met")
+        else: 
+            print("Slayed: Katz Criterion met")
+
+        #MT and RT
+        mt_lena = mojette.transform(lena, angles)
+        rt_lena = mojette.toDRT(mt_lena, angles, N, N, N) #sinogram
+
+        #RT to DFT
+        subsetsMValues = compute_slopes(subsetsAngles)
+        powSpectLena = np.zeros((N, N)) # empty 2DFT
+        powSpectLena = fill_dft(subsetsMValues, powSpectLena)
+        #to make 2D FT visable, nicer than 20*log 
+        lena_fractal = [[min(abs(i), 1) for i in array ] for array in powSpectLena]
+
+        #reconstruct from 2D FT spcae
+        start = time.time() 
+        recon = osem_expand_complex(iteration_num, p, rt_lena, subsetsMValues, finite.frt_complex, finite.ifrt_complex, lena, mask)
+        recon = np.abs(recon)
+        end = time.time()
+        elapsed = end - start
+        print("OSEM Reconstruction took " + str(elapsed) + " secs or " + str(elapsed/60) + " mins in total")
+
+        #store data
+        data_dft[str([iteration_num, l, elapsed])] = powSpectLena.ravel()
+        data_recon[str([iteration_num, l, elapsed])] = recon.ravel()
+        data_radon[str([iteration_num, l, elapsed])] = rt_lena.ravel()
+        print([iteration_num, l, elapsed])
+
     
-    #MT and RT
-    mt_lena = mojette.transform(lena, angles)
-    rt_lena = mojette.toDRT(mt_lena, angles, N, N, N) #sinogram
-
-    #RT to DFT
-    subsetsMValues = compute_slopes(subsetsAngles)
-    powSpectLena = np.zeros((N, N)) # empty 2DFT
-    powSpectLena = fill_dft(subsetsMValues, powSpectLena)
-    lena_fractal = [[min(abs(i), 1) for i in array ] for array in powSpectLena]
-
-    start = time.time() #time generation
-    recon = osem_expand_complex(parameters[2], p, rt_lena, subsetsMValues, finite.frt_complex, finite.ifrt_complex, lena, mask)
-    recon = np.abs(recon)
-    print("Done")
-    end = time.time()
-    elapsed = end - start
-    print("OSEM Reconstruction took " + str(elapsed) + " secs or " + str(elapsed/60) + " mins in total")
-
-    parameters.append(elapsed)
-
-    data_dft[str(parameters)] = powSpectLena.ravel()
-    data_recon[str(parameters)] = recon.ravel()
-    
+# store data to csv
 df_dft = pd.DataFrame(data_dft)
 df_recon = pd.DataFrame(data_recon)
-print("appending")
+df_radon = pd.DataFrame(data_radon)
+
 df_dft.to_csv('dft.csv', index = False)
 df_recon.to_csv('recon.csv', index = False)
-print("done")
- # %%
+df_radon.to_csv('radon.csv', index = False)
+
+# plot data --------------------------------------------------------------------
 colors = [(0, 0, 0), (1, 0, 0)]  # Black and Pink
 custom_cmap = LinearSegmentedColormap.from_list("black_red", colors, N=256)
 
 df = pd.read_csv('dft.csv')
-figure, axis = plt.subplots(1, 2)
-for v in range(0, 2): 
-    data_dft = np.array(df.iloc[:, v].tolist())
-    data_dft = np.reshape(data_dft, (N, N))
-    lena_fractal = [[min(abs(i), 1) for i in array ] for array in data_dft]
-    axis[v].imshow(lena_fractal, cmap = custom_cmap)
-    axis[v].set_title(df.iloc[:, v].name)
-    axis[v].axis("off")
+# figure, axis = plt.subplots(len(norms), len(iterations))
+figure, axis = plt.subplots(len(norms), len(iterations))
+
+# for l in range(0, len(norms)):
+for v in range(0, len(iterations)): 
+    for l in range(0, len(norms)):
+        print(df.iloc[:, 4 * v + l].name)
+        data_dft = np.array(df.iloc[:, 4 * v + l].tolist())
+        data_dft = np.reshape(data_dft, (N, N))
+        lena_fractal = [[min(abs(i), 1) for i in array ] for array in data_dft]
+        axis[l, v].imshow(lena_fractal, cmap = custom_cmap)
+        axis[l, v].set_title(df.iloc[:, 4 * v + l].name)
+        axis[l, v].axis("off")
 
 df = pd.read_csv('recon.csv')
-figure2, axis2 = plt.subplots(1, 2)
-for v in range(0, 2): 
-    recon_data = np.array(df.iloc[:, v].tolist())
-    recon_data = np.reshape(recon_data, (N, N))
-    axis2[v].imshow(recon_data, cmap = 'gray')
-    axis2[v].set_title(df.iloc[:, v].name)
-    axis2[v].axis("off")
+figure2, axis2 = plt.subplots(len(norms), len(iterations))
+for l in range(0, len(norms)):
+    for v in range(0, len(iterations)): 
+        recon_data = np.array(df.iloc[:, 4 * v + l].tolist())
+        recon_data = np.reshape(recon_data, (N, N))
+        axis2[l, v].imshow(recon_data, cmap = 'gray')
+        axis2[l, v].set_title(df.iloc[:, 4 * v + l].name)
+        axis2[l, v].axis("off")
+
 plt.show()
+
+
+# plt.show()
+# df = pd.read_csv('radon.csv')
+# figure3, axis3 = plt.subplots(1, len(iterations))
+# for v in range(0, len(iterations)): 
+#     radon_data = np.array(df.iloc[:, v].tolist())
+#     radon_data = np.reshape(radon_data, (N, N))
+#     axis3[v].imshow(radon_data, cmap = 'gray')
+#     axis3[v].set_title(df.iloc[:, v].name)
+#     axis3[v].axis("off")
+# plt.show()
 
 # inverse DFT
 # result = fftpack.ifft2(powSpectLena) 

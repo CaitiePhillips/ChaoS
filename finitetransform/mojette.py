@@ -26,6 +26,8 @@ import finitetransform.radon as radon
 import numpy as np
 import scipy.fftpack as fftpack
 import pyfftw
+import random
+random.seed(10)
 
 # Monkey patch in fftn and ifftn from pyfftw.interfaces.scipy_fftpack
 fftpack.fft2 = pyfftw.interfaces.scipy_fftpack.fft2
@@ -422,7 +424,7 @@ def angleSet_Symmetric(P, Q, octant=0, binLengths=False, K = 1):
         return angles, binLengthList
     return angles
     
-def angleSubSets_Symmetric(s, mode, P, Q, octant=0, binLengths=False, K = 1):
+def angleSubSets_Symmetric(s, mode, P, Q, octant=0, binLengths=False, K = 1, l = 2):
     '''
     Generate the minimal L1 angle set for the MT for s subsets.
     Parameter K controls the redundancy, K = 1 is minimal.
@@ -444,8 +446,16 @@ def angleSubSets_Symmetric(s, mode, P, Q, octant=0, binLengths=False, K = 1):
     fareyVectors.compactOff()
     fareyVectors.generate(maxPQ-1, 1)
     vectors = fareyVectors.vectors
-    sortedVectors = sorted(vectors, key=lambda x: x.real**2+x.imag**2) #sort by L2 magnitude
-    
+    if l == -1: 
+        # no order, randomise
+        sortedVectors = vectors
+        random.shuffle(sortedVectors)
+    elif l == 100: 
+        # max 
+        sortedVectors = sorted(vectors, key=lambda x: max(x.real,x.imag)) 
+    else: 
+        sortedVectors = sorted(vectors, key=lambda x: x.real**l+x.imag**l) 
+
     index = 0
     subsetIndex = 0
     binLengthList = []
@@ -459,9 +469,6 @@ def angleSubSets_Symmetric(s, mode, P, Q, octant=0, binLengths=False, K = 1):
         p, q = farey.get_pq(sortedVectors[index]) # p = imag, q = real
         
         binLengthList.append(projectionLength(sortedVectors[index],P,Q))
-        
-#        if isKatzCriterion(P, Q, angles):
-#            break
         
         if octant == 0:
             continue
@@ -512,6 +519,7 @@ def angleSubSets_Symmetric(s, mode, P, Q, octant=0, binLengths=False, K = 1):
     
     if binLengths:
         return angles, subsetAngles, binLengthList
+    
     return angles, subsetAngles
     
 def angleSetSliceCoordinates(angles, P, Q, N, center=False):

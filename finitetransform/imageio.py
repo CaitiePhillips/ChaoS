@@ -77,14 +77,15 @@ def imcrop(img, n, m=0, center=True, out_dtype=np.uint32):
         if center:
             newLengthX = midx - mid
             if n % 2 == 1:#prime size
-                newLengthY = midy + mid + 1
+                newLengthY = midy + mid + 1 #idk why this 1 messes it up 
             else:
                 newLengthY = midy + mid
         else:
             newLengthX = 0
             newLengthY = n
         image[newLengthX:newLengthY, newLengthX:newLengthY] = crop_img.astype(out_dtype)
-    else:
+    
+    else: #lowkey not sure that image would even be defined here but okie xxx
         image = crop_img.astype(out_dtype)
         
     return image

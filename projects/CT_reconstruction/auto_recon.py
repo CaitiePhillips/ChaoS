@@ -147,7 +147,7 @@ def osem_expand_complex(iterations, p, g_j, os_mValues, projector, backprojector
                 print("Smooth TV")
                 f = denoise_tv_chambolle(f, 0.02, multichannel=False)
             elif smoothReconMode == 2:
-                h = parameters[4]
+                h = 8.0
                 if i > smoothMaxIteration:
                     h /= 2.0
                 if i > smoothMaxIteration2:
@@ -221,136 +221,48 @@ def recon_loop(N, l, K, k, i, s, p):
     return rt_lena, powSpectLena, recon, elapsed
 
 # reconstruct data -------------------------------------------------------------
-data_dft_p = {}
-data_recon_p = {}
+data_path = "auto_recon_data/long_recon_1000/"
+data_dft = {}
+data_recon = {}
 # data_radon = {}
 
-
-
-n = nt.nearestPrime(258) #prime for not dyadic size
+n = nt.nearestPrime(256) #prime for not dyadic size
 N = n 
 subsetsMode = 1
 
-iterations = [1, 2, 4]
-norms = [1, 2, 100] #random, l1-norm, l2-norm, linfty-norm or max
-
-k = 1
-M = int(k * N)
-ps = [M, nt.nearestPrime(nt.nearestPrime(M) + 1), nt.nearestPrime(M)]
-
-# lena, mask = imageio.phantom(N, p, True, np.uint32, True)
-
-# %% 
-for p in ps:
-    #should also do for different paddings p?
-
-    #parameter sets (K, k, i, s, h)
-    #Phantom: N=256, i=381, s=30, h=8, K=1.2, k=1;
-
+# %%
+for j in range(1):
     #parameters
-    (K, k, i, s, h, l) = (1.2, 1, 10, 30, 8.0, 2)
+    (K, k, i, s, h, l) = (1.2, 1, 1000, 30, 8.0, 2)
+    M = int(k * N)
+    p = nt.nearestPrime(M)
     rt_lena, powSpectLena, recon, elapsed = recon_loop(N, l, K, k, i, s, p)
 
     #store data
-    data_dft_p[str(p)] = powSpectLena.ravel()
-    data_recon_p[str(p)] = recon.ravel()
+    data_dft["random norm"] = powSpectLena.ravel()
+    data_recon["random norm"] = recon.ravel()
     # data_radon[str(p)] = rt_lena.ravel()
-    print(p)
 
-    
 # store data to csv
-df_dft_p = pd.DataFrame(data_dft_p)
-df_recon_p = pd.DataFrame(data_recon_p)
+df_dft = pd.DataFrame(data_dft)
+df_recon = pd.DataFrame(data_recon)
 # df_radon = pd.DataFrame(data_radon)
 
-df_dft_p.to_csv('vary_p/dft.csv', index = False)
-df_recon_p.to_csv('vary_p/recon.csv', index = False)
-# df_radon.to_csv('radon.csv', index = False)
+df_dft.to_csv(data_path+'dft.csv', index = False)
+df_recon.to_csv(data_path+'recon.csv', index = False)
+df_radon.to_csv('radon.csv', index = False)
 
+# %%
 # plot data --------------------------------------------------------------------
 colors = [(0, 0, 0), (1, 0, 0)]  # Black and Pink
 custom_cmap = LinearSegmentedColormap.from_list("black_red", colors, N=256)
 
-df = pd.read_csv('vary_p/dft_p.csv')
-# figure, axis = plt.subplots(len(norms), len(iterations))
-figure, axis = plt.subplots(1, len(ps))
+df = pd.read_csv(data_path+'recon.csv')
 
-for j in range(0, len(ps)): 
-    data_dft = np.array(df.iloc[:, i].tolist())
-    data_dft = np.reshape(data_dft, (N, N))
-    lena_fractal = [[min(abs(i), 1) for i in array ] for array in data_dft]
-    axis[j].imshow(lena_fractal, cmap = custom_cmap)
-    axis[j].set_title(df.iloc[:, j].name)
-    axis[j].axis("off")
+data = np.array(df.iloc[:, 0].tolist())
+data = np.reshape(data, (N, N))
+plt.imshow(data, cmap = 'gray')
+plt.title("time:" + elapsed)
+plt.axis("off")
 
 plt.show()
-
-# #plotting for change in norm AND iterations ----------------------------------
-# # for l in range(0, len(norms)):
-# for v in range(0, len(iterations)): 
-#     for l in range(0, len(norms)):
-#         data_dft = np.array(df.iloc[:, len(norms) * v + l].tolist())
-#         data_dft = np.reshape(data_dft, (N, N))
-#         lena_fractal = [[min(abs(i), 1) for i in array ] for array in data_dft]
-#         axis[l, v].imshow(lena_fractal, cmap = custom_cmap)
-#         axis[l, v].set_title(df.iloc[:, len(norms) * v + l].name)
-#         axis[l, v].axis("off")
-
-# df = pd.read_csv('recon.csv')
-# figure2, axis2 = plt.subplots(len(norms), len(iterations))
-# for l in range(0, len(norms)):
-#     for v in range(0, len(iterations)): 
-#         recon_data = np.array(df.iloc[:, len(norms) * v + l].tolist())
-#         recon_data = np.reshape(recon_data, (N, N))
-#         axis2[l, v].imshow(recon_data, cmap = 'gray')
-#         axis2[l, v].set_title(df.iloc[:, len(norms) * v + l].name)
-#         axis2[l, v].axis("off")
-
-# plt.show()
-
-
-
-
-# plt.show()
-# df = pd.read_csv('radon.csv')
-# figure3, axis3 = plt.subplots(1, len(iterations))
-# for v in range(0, len(iterations)): 
-#     radon_data = np.array(df.iloc[:, v].tolist())
-#     radon_data = np.reshape(radon_data, (N, N))
-#     axis3[v].imshow(radon_data, cmap = 'gray')
-#     axis3[v].set_title(df.iloc[:, v].name)
-#     axis3[v].axis("off")
-# plt.show()
-
-# inverse DFT
-# result = fftpack.ifft2(powSpectLena) 
-
-# #plot
-# figure, axis = plt.subplots(1, 3)
-
-# axis[0].imshow(rt_lena)
-# axis[0].set_title("DRT")
-# axis[0].axis("off")
-
-
-# axis[1].imshow(lena_fractal, cmap = custom_cmap)
-# axis[1].set_title("2D FT")
-# axis[1].axis("off")
-
-# axis[2].imshow(np.abs(result), cmap='gray')
-# axis[2].set_title("Recon")
-# axis[2].axis("off")
-
-# plt.show()
-
-# #experimenting with mojette, plot projections
-# # pad each mt so same length to plot
-# max_len = max([len(mt) for mt in mt_lena])
-# mt_padded = np.zeros((N + 1, max_len))
-# for i, mt in enumerate(mt_lena): 
-#     m, inv = farey.toFinite(angles[i], N)
-
-#     mt = np.array(mt_lena[i])
-#     mt_padded[m] = np.pad(mt, (max_len - len(mt))//2, 'constant')
-
-# %%

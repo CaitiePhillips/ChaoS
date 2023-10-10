@@ -424,7 +424,7 @@ def angleSet_Symmetric(P, Q, octant=0, binLengths=False, K = 1):
         return angles, binLengthList
     return angles
     
-def angleSubSets_Symmetric(s, mode, P, Q, octant=0, binLengths=False, K = 1, l = 2):
+def angleSubSets_Symmetric(s, mode, P, Q, octant=0, binLengths=False, K = 1, l = 2, max_angles = 10):
     '''
     Generate the minimal L1 angle set for the MT for s subsets.
     Parameter K controls the redundancy, K = 1 is minimal.
@@ -462,7 +462,8 @@ def angleSubSets_Symmetric(s, mode, P, Q, octant=0, binLengths=False, K = 1, l =
     angles.append(sortedVectors[index])
     subsetAngles[subsetIndex].append(sortedVectors[index])
     binLengthList.append(projectionLength(sortedVectors[index],P,Q))
-    while not isKatzCriterion(P, Q, angles, K) and index < len(sortedVectors): # check Katz
+    # while not isKatzCriterion(P, Q, angles, K) and index < len(sortedVectors): # check Katz
+    while index < len(sortedVectors) and index < max_angles: # check Katz
         index += 1
         angles.append(sortedVectors[index])
         subsetAngles[subsetIndex].append(sortedVectors[index])

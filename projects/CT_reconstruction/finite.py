@@ -210,3 +210,24 @@ def noise(kSpace, snr):
             noise[u,v] = noiseReal + 1j*noiseImag
             
     return noise
+
+def noise_mt(proj, snr):
+    '''
+    Create noise in db for given kSpace and SNR
+    '''
+    r = proj.size
+    #pwoer of signal and noise
+    # P = np.sum(np.abs(proj)**2)/(r) # this overflows
+    P = np.sum((np.abs(proj)**2) / r)
+    P_N = P / (10**(snr/10))
+    #P_N is equivalent to sigma**2 and signal usually within 3*sigma
+    sigma = math.sqrt(P_N)
+    
+    noise = np.zeros_like(proj)
+    for u, val in enumerate(proj):
+            noiseReal = np.abs(np.random.normal(0, sigma)) # no -ve projections
+            # noiseImag = np.random.normal(0, sigma)
+            # for MT, we are working w real numbers so should have any im component
+            noise[u] = noiseReal
+            
+    return noise

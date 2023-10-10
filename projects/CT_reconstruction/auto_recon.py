@@ -47,6 +47,8 @@ from matplotlib.colors import LinearSegmentedColormap
 import pandas as pd
 import time
 import matplotlib
+import os
+import math
 matplotlib.use('Qt4Agg')
 
 # Monkey patch in fftn and ifftn from pyfftw.interfaces.scipy_fftpack
@@ -96,8 +98,6 @@ def fill_dft(rt, subsetsMValues, powSpectLena):
     powSpectLena = fftpack.fftshift(powSpectLena)
     powSpectLena = powSpectLena + np.flipud(powSpectLena) # conj symmetric
 
-    return powSpectLena
-
 def osem_expand_complex(iterations, p, g_j, os_mValues, projector, backprojector, image, mask, epsilon=1e3, dtype=np.int32):
     '''
     # Gary's implementation
@@ -108,20 +108,15 @@ def osem_expand_complex(iterations, p, g_j, os_mValues, projector, backprojector
     # self.f is the current estimate f^\hat
     # The following g from (**) is equivalent to g = \sum (h f^\hat)
     '''
-    smoothReconMode = 2 #0-None,1-TV,2-NL,3-Median
-    smoothIncrement = 10
-    smoothMaxIteration = iterations/2
-    relaxIterationFactor = int(0.01*iterations)
-    smoothMaxIteration2 = iterations-relaxIterationFactor*smoothIncrement
-    plotIncrement = 2
-
     norm = False
     center = False
-    fdtype = np.complex
+    fdtype = floatType
     f = np.ones((p,p), fdtype)
     
+    mses = []
+    psnrs = []
+    ssims = []
     for i in range(0, iterations):
-        print("Iteration:", i)
         for j, mValues in enumerate(os_mValues):
 #            print("Subset:", j)
             muFinite = len(mValues)
@@ -147,7 +142,7 @@ def osem_expand_complex(iterations, p, g_j, os_mValues, projector, backprojector
                 print("Smooth TV")
                 f = denoise_tv_chambolle(f, 0.02, multichannel=False)
             elif smoothReconMode == 2:
-                h = 8.0
+                h = parameters[4]
                 if i > smoothMaxIteration:
                     h /= 2.0
                 if i > smoothMaxIteration2:
@@ -166,8 +161,18 @@ def osem_expand_complex(iterations, p, g_j, os_mValues, projector, backprojector
             img = imageio.immask(image, mask, N, N)
             recon = imageio.immask(f, mask, N, N)
             recon = np.abs(recon)
+            mse = imageio.immse(img, recon)
+            psnr = imageio.impsnr(img, recon)
+            ssim = imageio.imssim(img.astype(float), recon.astype(float))
+            print("RMSE:", math.sqrt(mse), "PSNR:", psnr, "SSIM:", ssim)
+            mses.append(mse)
+            psnrs.append(psnr)
+            ssims.append(ssim)
         
-    return f
+    return f, mses, psnrs, ssims
+
+
+
 
 def recon_loop(N, l, K, k, i, s, p): 
     """
@@ -188,6 +193,7 @@ def recon_loop(N, l, K, k, i, s, p):
     perpAngle = farey.farey(1,0)
     angles.append(perpAngle)
     subsetsAngles[0].append(perpAngle)
+    print("num angles:", len(angles))
     # p = nt.nearestPrime(M)
 
     #create test image
@@ -220,49 +226,114 @@ def recon_loop(N, l, K, k, i, s, p):
 
     return rt_lena, powSpectLena, recon, elapsed
 
-# reconstruct data -------------------------------------------------------------
-data_path = "auto_recon_data/long_recon_1000/"
-data_dft = {}
-data_recon = {}
-# data_radon = {}
+#parameter sets (K, k, i, s, h)
+#phantom
+#parameters = [1.2, 1, 381, 30, 8.0] #r=2
+parameters = [0.4, 1, 760, 12, 12.0] #r=4
+#cameraman
+#parameters = [1.2, 1, 381, 30, 8.0] #r=2
 
-n = nt.nearestPrime(256) #prime for not dyadic size
+#parameters
+n = 257
+k = parameters[1]
+M = int(k*n)
 N = n 
+K = parameters[0]
+s = parameters[3]
+iterations = 10 #parameters[2]
 subsetsMode = 1
+SNR = 20
+floatType = np.complex
+twoQuads = True
+addNoise = True
+plotCroppedImages = True
+plotColourBar = True
+plotIncrement = 2
+smoothReconMode = 2 #0-None,1-TV,2-NL,3-Median
+smoothIncrement = 10
+smoothMaxIteration = iterations/2
+relaxIterationFactor = int(0.01*iterations)
+#smoothMaxIteration2 = iterations-1
+smoothMaxIteration2 = iterations-relaxIterationFactor*smoothIncrement
+print("N:", N, "M:", M, "s:", s, "i:", iterations)
 
-# %%
-for j in range(1):
-    #parameters
-    (K, k, i, s, h, l) = (1.2, 1, 1000, 30, 8.0, 2)
-    M = int(k * N)
-    p = nt.nearestPrime(M)
-    rt_lena, powSpectLena, recon, elapsed = recon_loop(N, l, K, k, i, s, p)
+pDash = nt.nearestPrime(N)
+print("p':", pDash)
 
-    #store data
-    data_dft["random norm"] = powSpectLena.ravel()
-    data_recon["random norm"] = recon.ravel()
-    # data_radon[str(p)] = rt_lena.ravel()
+iterations_lst = [500, 1000, 1500]
+addNoise_lst = [True, False]
+angles_lst = [56, 2 * 52, 3 * 56, 4 * 56]
 
-# store data to csv
-df_dft = pd.DataFrame(data_dft)
-df_recon = pd.DataFrame(data_recon)
-# df_radon = pd.DataFrame(data_radon)
 
-df_dft.to_csv(data_path+'dft.csv', index = False)
-df_recon.to_csv(data_path+'recon.csv', index = False)
-df_radon.to_csv('radon.csv', index = False)
+for iterations in iterations_lst: 
+    for addNoise in addNoise_lst:
+        for max_angles in angles_lst:
+            angles, subsetsAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,N,N,1,True,K, max_angles = max_angles)
+            #angles, subsetsAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,M,M,1,True,K)
+            perpAngle = farey.farey(1,0)
+            angles.append(perpAngle)
+            subsetsAngles[0].append(perpAngle)
+            print("Number of Angles:", len(angles))
+            print("angles:", angles)
 
-# %%
-# plot data --------------------------------------------------------------------
-colors = [(0, 0, 0), (1, 0, 0)]  # Black and Pink
-custom_cmap = LinearSegmentedColormap.from_list("black_red", colors, N=256)
+            p = nt.nearestPrime(M)
+            print("p:", p)
 
-df = pd.read_csv(data_path+'recon.csv')
+            #check if Katz compliant
+            if not mojette.isKatzCriterion(N, N, angles):
+                print("Warning: Katz Criterion not met")
+            else: 
+                print("Slayed: Katz Criterion met")
 
-data = np.array(df.iloc[:, 0].tolist())
-data = np.reshape(data, (N, N))
-plt.imshow(data, cmap = 'gray')
-plt.title("time:" + elapsed)
-plt.axis("off")
 
-plt.show()
+            #create test image
+            #lena, mask = imageio.lena(N, p, True, np.uint32, True)
+            lena, mask = imageio.phantom(N, p, True, np.uint32, True)
+            #lena, mask = imageio.cameraman(N, p, True, np.uint32, True)
+
+            #-------------------------------
+            # %%
+            #acquired Mojette projections
+            mt_lena = mojette.transform(lena, angles)
+            # im = mojette.backproject(mt_lena, angles, N, N)
+
+            if addNoise: 
+                for idx, proj in enumerate(mt_lena): 
+                    mt_lena[idx] += finite.noise_mt(mt_lena[idx], SNR)
+
+            # im_noisy = mojette.backproject(mt_lena, angles, N, N)
+
+            #plot difference between images just to confirm 
+            # fig, ax = plt.subplots(nrows=1, ncols=3, figsize=(16, 8))
+            # ax[0].imshow(im)
+            # ax[1].imshow(im_noisy)
+            # ax[2].imshow(im_noisy - im)
+            # plt.show()
+
+            # %%
+            #convert to radon projections for recon
+            rt_lena = mojette.toDRT(mt_lena, angles, N, N, N) 
+            #convert to 2D FT Space
+            subsetsMValues = compute_slopes(subsetsAngles, True, p)
+            powSpectLena = np.zeros((N, N)) # empty 2DFT
+            fill_dft(rt_lena, subsetsMValues, powSpectLena)
+
+            # convert 2D FT space to an interperatable image
+            # lena_fractal = [[min(abs(j), 1) for j in array ] for array in powSpectLena]
+            # plt.imshow(lena_fractal)
+            # plt.show()
+
+            # # %%
+            start = time.time() #time generation
+            recon, mses, psnrs, ssims = osem_expand_complex(iterations, p, rt_lena, \
+                                                            subsetsMValues, finite.frt_complex, \
+                                                                finite.ifrt_complex, lena, mask)
+            recon = np.abs(recon)
+            print("Done")
+            end = time.time()
+            elapsed = end - start
+            print("OSEM Reconstruction took " + str(elapsed) + " secs or " + str(elapsed/60) \
+                + " mins in total")
+            file = 'noise_{}_its_{}_angles_{}.npz'.format(addNoise, iterations, len(angles))
+            np.savez(file, recon=recon, time=elapsed)
+

@@ -227,6 +227,12 @@ def toDRT(projections, angles, N, P, Q, center=False):
     
     if dyadic:
         print("Dyadic size not tested yet.")
+        # for index, proj in enumerate(projections):
+        #     p, q = farey.get_pq(angles[index])
+
+        #     m, inv = farey.toFinite(angles[index], N)
+        #     frtSpace[m][:] = finiteProjection(proj, angles[index], P, Q, N, center)
+            
         #for each project
         '''for index, proj in enumerate(projections):
             p, q = farey.get_pq(angles[index])
@@ -424,7 +430,7 @@ def angleSet_Symmetric(P, Q, octant=0, binLengths=False, K = 1):
         return angles, binLengthList
     return angles
     
-def angleSubSets_Symmetric(s, mode, P, Q, octant=0, binLengths=False, K = 1, l = 2, max_angles = 10):
+def angleSubSets_Symmetric(s, mode, P, Q, octant=0, binLengths=False, K = 1, max_angles = 32):
     '''
     Generate the minimal L1 angle set for the MT for s subsets.
     Parameter K controls the redundancy, K = 1 is minimal.
@@ -446,24 +452,17 @@ def angleSubSets_Symmetric(s, mode, P, Q, octant=0, binLengths=False, K = 1, l =
     fareyVectors.compactOff()
     fareyVectors.generate(maxPQ-1, 1)
     vectors = fareyVectors.vectors
-    if l == -1: 
-        # no order, randomise
-        sortedVectors = vectors
-        random.shuffle(sortedVectors)
-    elif l == 100: 
-        # max 
-        sortedVectors = sorted(vectors, key=lambda x: max(x.real,x.imag)) 
-    else: 
-        sortedVectors = sorted(vectors, key=lambda x: x.real**l+x.imag**l) 
-
+    sortedVectors = sorted(vectors, key=lambda x: x.real**2+x.imag**2) #sort by L2 magnitude
+    
     index = 0
     subsetIndex = 0
     binLengthList = []
     angles.append(sortedVectors[index])
     subsetAngles[subsetIndex].append(sortedVectors[index])
     binLengthList.append(projectionLength(sortedVectors[index],P,Q))
-    # while not isKatzCriterion(P, Q, angles, K) and index < len(sortedVectors): # check Katz
-    while index < len(sortedVectors) and index < max_angles: # check Katz
+    while not isKatzCriterion(P, Q, angles, K) and index < len(sortedVectors): # check Katz
+    # while index < len(sortedVectors) and index < max_angles: # check Katz
+
         index += 1
         angles.append(sortedVectors[index])
         subsetAngles[subsetIndex].append(sortedVectors[index])

@@ -116,6 +116,40 @@ def toFinite(fareyVector, N):
 #        print "perp vec:", fareyVector, "m:", mValue, "inv:", inv
 
     return mValue, inv
+
+def toFiniteByCaitie(fareyVector, N):
+    '''
+    Return the finite vector corresponding to the Farey vector provided for a given modulus/length N
+    and the multiplicative inverse of the relevant Farey angle
+    '''
+    p, q = get_pq(fareyVector)
+    coprime = nt.is_coprime(abs(q), N)
+    qNeg = q #important, if q < 0, preserve for minverse.
+    if q < 0:
+        q += N #necessary for quadrants other than the first
+    if p < 0:
+        p += N #necessary for quadrants other than the first
+#    print("p:", p, "q:", q)
+
+    mValue = -1
+    sValue = -1
+    inv = 1
+    if not nt.is_coprime(abs(p), N): # gcd(p, N) > 1
+        inv = nt.minverse(qNeg, N)
+#        identity = (inv*q)%N
+        mValue = (p*inv) % N
+        print("gcd(p, N) > 1, mval:", mValue)
+    elif not nt.is_coprime(abs(q), N): # gcd(p, N) > 1
+        inv = nt.minverse(p, N)
+        mValue = ((inv * q) % N) / 2
+        print("gcd(q, N) > 1, sval:", mValue)
+
+    else: #perp projection
+        inv = nt.minverse(p, N)
+        mValue = (q*inv)%N + N 
+        print("else, mval:", mValue)
+
+    return mValue, inv
     
 def finiteTranslateOffset(fareyVector, N, P, Q):
     '''

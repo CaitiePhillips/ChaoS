@@ -261,7 +261,7 @@ pDash = nt.nearestPrime(N)
 print("p':", pDash)
 
 iterations_lst = [500]
-addNoise_lst = [True, False]
+addNoise_lst = [False]
 angles_lst = [56]
 
 
@@ -295,11 +295,44 @@ for iterations in iterations_lst:
             # %%
             #acquired Mojette projections
             mt_lena = mojette.transform(lena, angles)
-            mt_pad = []
             # im = mojette.backproject(mt_lena, angles, N, N)
-            max_len = max([len(i) for i in mt_lena])
-            for i, proj in enumerate(mt_lena): 
-                mt_pad.append(np.pad(proj, pad_width = math.ceil((max_len - len(proj))/2), mode = 'constant'))
 
-            plt.imshow(mt_pad)
-            plt.show()
+            if addNoise: 
+                for idx, proj in enumerate(mt_lena): 
+                    mt_lena[idx] += finite.noise_mt(mt_lena[idx], SNR)
+
+            # im_noisy = mojette.backproject(mt_lena, angles, N, N)
+
+            #plot difference between images just to confirm 
+            # fig, ax = plt.subplots(nrows=1, ncols=3, figsize=(16, 8))
+            # ax[0].imshow(im)
+            # ax[1].imshow(im_noisy)
+            # ax[2].imshow(im_noisy - im)
+            # plt.show()
+
+            # %%
+            #convert to radon projections for recon
+            rt_lena = mojette.toDRT(mt_lena, angles, N, N, N) 
+            #convert to 2D FT Space
+            subsetsMValues = compute_slopes(subsetsAngles, True, p)
+            powSpectLena = np.zeros((N, N)) # empty 2DFT
+            fill_dft(rt_lena, subsetsMValues, powSpectLena)
+
+            # convert 2D FT space to an interperatable image
+            # lena_fractal = [[min(abs(j), 1) for j in array ] for array in powSpectLena]
+            # plt.imshow(lena_fractal)
+            # plt.show()
+
+            # # %%
+            start = time.time() #time generation
+            recon, mses, psnrs, ssims = osem_expand_complex(iterations, p, rt_lena, \
+                                                            subsetsMValues, finite.frt_complex, \
+                                                                finite.ifrt_complex, lena, mask)
+            recon = np.abs(recon)
+            print("Done")
+            end = time.time()
+            elapsed = end - start
+            print("OSEM Reconstruction took " + str(elapsed) + " secs or " + str(elapsed/60) \
+                + " mins in total")
+            file = 'its_{}_angles_{}.npz'.format(addNoise, iterations, len(angles))
+            np.savez(file, recon=recon, time=elapsed)

@@ -149,13 +149,13 @@ def osem_expand_complex(iterations, p, g_j, os_mValues, projector, backprojector
                     h /= 4.0
                 print("Smooth NL h:",h)
                 fReal = denoise_nl_means(np.real(f), patch_size=5, patch_distance=11, h=h, multichannel=False, fast_mode=True).astype(fdtype)
-                fImag = denoise_nl_means(np.imag(f), patch_size=5, patch_distance=11, h=h, multichannel=False, fast_mode=True).astype(fdtype)
-                f = fReal +1j*fImag
+                # fImag = denoise_nl_means(np.imag(f), patch_size=5, patch_distance=11, h=h, multichannel=False, fast_mode=True).astype(fdtype)
+                f = fReal #+1j*fImag
             elif smoothReconMode == 3:
                 print("Smooth Median")
                 fReal = ndimage.median_filter(np.real(f), 3)
-                fImag = ndimage.median_filter(np.imag(f), 3)
-            f = fReal +1j*fImag
+                # fImag = ndimage.median_filter(np.imag(f), 3)
+            f = fReal #+1j*fImag
             
         if i%plotIncrement == 0:
             img = imageio.immask(image, mask, N, N)
@@ -171,60 +171,6 @@ def osem_expand_complex(iterations, p, g_j, os_mValues, projector, backprojector
         
     return f, mses, psnrs, ssims
 
-
-
-
-def recon_loop(N, l, K, k, i, s, p): 
-    """
-    reconstructs 2DFT from projections
-
-    N (int): size of reconstructed image
-    l (int): l-norm to use for ordering of farey vectors 
-    K (int): redundancy factor
-    k (int): ration of N:M
-    i (int): number of iterations to complete
-    s (int): number of angle sets to build projetions from
-
-
-    """
-    M = int(k*N)
-
-    angles, subsetsAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode ,N,N,1,True,K, l)
-    perpAngle = farey.farey(1,0)
-    angles.append(perpAngle)
-    subsetsAngles[0].append(perpAngle)
-    print("num angles:", len(angles))
-    # p = nt.nearestPrime(M)
-
-    #create test image
-    lena, mask = imageio.phantom(N, p, True, np.uint32, True)
-
-    #check if Katz compliant
-    if not mojette.isKatzCriterion(N, N, angles):
-        print("Warning: Katz Criterion not met")
-    else: 
-        print("Slayed: Katz Criterion met")
-
-    #MT and RT
-    mt_lena = mojette.transform(lena, angles)
-    rt_lena = mojette.toDRT(mt_lena, angles, N, N, N) #sinogram
-
-    #RT to DFT
-    subsetsMValues = compute_slopes(subsetsAngles, True, p)
-    powSpectLena = np.zeros((N, N)) # empty 2DFT
-    powSpectLena = fill_dft(rt_lena, subsetsMValues, powSpectLena)
-    #to make 2D FT visable, nicer than 20*log 
-    lena_fractal = [[min(abs(j), 1) for j in array ] for array in powSpectLena]
-
-    #reconstruct from 2D FT spcae
-    start = time.time() 
-    recon = osem_expand_complex(i, p, rt_lena, subsetsMValues, finite.frt_complex, finite.ifrt_complex, lena, mask)
-    recon = np.abs(recon)
-    end = time.time()
-    elapsed = end - start
-    print("OSEM Reconstruction took " + str(elapsed) + " secs or " + str(elapsed/60) + " mins in total")
-
-    return rt_lena, powSpectLena, recon, elapsed
 
 #parameter sets (K, k, i, s, h)
 #phantom
@@ -243,7 +189,7 @@ s = parameters[3]
 iterations = 10 #parameters[2]
 subsetsMode = 1
 SNR = 20
-floatType = np.complex
+floatType = float# np.complex
 twoQuads = True
 addNoise = True
 plotCroppedImages = True
@@ -276,7 +222,7 @@ for iterations in iterations_lst:
             print("Number of Angles:", len(angles))
             print("angles:", angles)
 
-            p = nt.nearestPrime(M)
+            p = nt.nearestPrime(M + 1)
             print("p:", p)
 
             #check if Katz compliant
@@ -287,9 +233,7 @@ for iterations in iterations_lst:
 
 
             #create test image
-            #lena, mask = imageio.lena(N, p, True, np.uint32, True)
             lena, mask = imageio.phantom(N, p, True, np.uint32, True)
-            #lena, mask = imageio.cameraman(N, p, True, np.uint32, True)
 
             #-------------------------------
             # %%
@@ -312,27 +256,30 @@ for iterations in iterations_lst:
 
             # %%
             #convert to radon projections for recon
-            rt_lena = mojette.toDRT(mt_lena, angles, N, N, N) 
+            rt_lena = mojette.toDRT(mt_lena, angles, N, N + 1, N + 1) 
             #convert to 2D FT Space
             subsetsMValues = compute_slopes(subsetsAngles, True, p)
             powSpectLena = np.zeros((N, N)) # empty 2DFT
             fill_dft(rt_lena, subsetsMValues, powSpectLena)
-
-            # convert 2D FT space to an interperatable image
+            recon = finite.ifrt(rt_lena, N)
+            # # convert 2D FT space to an interperatable image
             # lena_fractal = [[min(abs(j), 1) for j in array ] for array in powSpectLena]
             # plt.imshow(lena_fractal)
             # plt.show()
 
-            # # %%
-            start = time.time() #time generation
-            recon, mses, psnrs, ssims = osem_expand_complex(iterations, p, rt_lena, \
-                                                            subsetsMValues, finite.frt_complex, \
-                                                                finite.ifrt_complex, lena, mask)
-            recon = np.abs(recon)
-            print("Done")
-            end = time.time()
-            elapsed = end - start
-            print("OSEM Reconstruction took " + str(elapsed) + " secs or " + str(elapsed/60) \
-                + " mins in total")
-            file = 'its_{}_angles_{}.npz'.format(addNoise, iterations, len(angles))
-            np.savez(file, recon=recon, time=elapsed)
+            # %%
+            # start = time.time() #time generation
+            # recon, mses, psnrs, ssims = osem_expand_complex(iterations, p, rt_lena, \
+            #                                                 subsetsMValues, finite.frt, \
+            #                                                     finite.ifrt, lena, mask)
+            # print(recon[0])
+            plt.imshow(recon, cmap='gray')
+            plt.show()
+            # end = time.time()
+            # elapsed = end - start
+            # print("OSEM Reconstruction took " + str(elapsed) + " secs or " + str(elapsed/60) \
+            #     + " mins in total")
+            # file = 'its_{}_angles_{}.npz'.format(addNoise, iterations, len(angles))
+            # np.savez(file, recon=recon, time=elapsed)
+
+# %%

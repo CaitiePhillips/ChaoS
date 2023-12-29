@@ -60,7 +60,6 @@ fftpack.ifft = pyfftw.interfaces.scipy_fftpack.ifft
 # Turn on the cache for optimum performance
 pyfftw.interfaces.cache.enable()
 
-
 # helper functions -------------------------------------------------------------
 def compute_slopes(subsetsAngles, twoQuads , p): 
         """
@@ -96,9 +95,12 @@ def fill_dft(rt, subsetsMValues, powSpectLena):
         radon.setSlice(m, powSpectLena, slice)
 
     powSpectLena = fftpack.fftshift(powSpectLena)
+    # powSpectLena = np.abs(powSpectLena)
+
     powSpectLena = powSpectLena + np.flipud(powSpectLena) # conj symmetric
 
-def osem_expand_complex(iterations, p, g_j, os_mValues, projector, backprojector, image, mask, epsilon=1e3, dtype=np.int32):
+def osem_expand(iterations, p, g_j, os_mValues, projector, backprojector,
+                         image, mask, epsilon=1e3, dtype=np.int32):
     '''
     # Gary's implementation
     # From Lalush and Wernick;
@@ -126,7 +128,6 @@ def osem_expand_complex(iterations, p, g_j, os_mValues, projector, backprojector
             # form parenthesised term (g_j / g) from (*)
             r = np.copy(g_j)
             for m in mValues:
-#                r[m,:] = g_j[m,:] / g[m,:]
                 for y in range(p):
                     r[m,y] /= g[m,y]
         
@@ -171,13 +172,23 @@ def osem_expand_complex(iterations, p, g_j, os_mValues, projector, backprojector
         
     return f, mses, psnrs, ssims
 
+def plot_angles(angles): 
+    real = [angle.real for angle in angles]
+    im = [angle.imag for angle in angles]
+    plt.plot(real, im, 'o')
 
-#parameter sets (K, k, i, s, h)
-#phantom
-#parameters = [1.2, 1, 381, 30, 8.0] #r=2
+    angles = [np.pi * i / 6 for i in range(0, 7)]
+    x = [7 * np.cos(angle) for angle in angles]
+    y = [7 * np.sin(angle) for angle in angles]
+    for i in range(len(x)):
+        plt.plot([0, x[i]], [0, y[i]], 'r-')
+
+    plt.xlim([-7, 7])
+    plt.ylim([-7, 7])
+    plt.grid(visible=True, which='both', axis='both')
+    plt.show()
+
 parameters = [0.4, 1, 760, 12, 12.0] #r=4
-#cameraman
-#parameters = [1.2, 1, 381, 30, 8.0] #r=2
 
 #parameters
 n = 257
@@ -206,80 +217,51 @@ print("N:", N, "M:", M, "s:", s, "i:", iterations)
 pDash = nt.nearestPrime(N)
 print("p':", pDash)
 
-iterations_lst = [500]
-addNoise_lst = [False]
-angles_lst = [56]
+iterations = 100
+addNoise = False
+max_angles = 56
 
 
-for iterations in iterations_lst: 
-    for addNoise in addNoise_lst:
-        for max_angles in angles_lst:
-            angles, subsetsAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,N,N,1,True,K, max_angles = max_angles)
-            #angles, subsetsAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,M,M,1,True,K)
-            perpAngle = farey.farey(1,0)
-            angles.append(perpAngle)
-            subsetsAngles[0].append(perpAngle)
-            print("Number of Angles:", len(angles))
-            print("angles:", angles)
+angles, subsetsAngles, _ = mojette.angleSubSets_Symmetric(s,
+                                                subsetsMode, N, N, 2, True, K)
+plot_angles(angles)
+# opposite_angles = []
+# for angleSet in subsetsAngles: 
+#     new = [farey.farey(-1* angle.imag, 1 * angle.real) for angle in angleSet]
+#     opposite_angles.append(new)
+#     angles += new 
 
-            p = nt.nearestPrime(M + 1)
-            print("p:", p)
+# perpAngle = farey.farey(1,0)
+# angles.append(perpAngle)
+# subsetsAngles[0].append(perpAngle)
+# plot_angles(angles)
 
-            #check if Katz compliant
-            if not mojette.isKatzCriterion(N, N, angles):
-                print("Warning: Katz Criterion not met")
-            else: 
-                print("Slayed: Katz Criterion met")
+print("Number of Angles:", len(angles))
+print("angles:", angles)
 
+p = nt.nearestPrime(M)
+lena, mask = imageio.phantom(N, p, True, np.uint32, True)
+# #-------------------------------
 
-            #create test image
-            lena, mask = imageio.phantom(N, p, True, np.uint32, True)
+#acquired Mojette projections
+mt_lena = mojette.transform(lena, angles)
+#convert to radon projections for recon
+rt_lena = mojette.toDRT(mt_lena, angles, N, N, N) 
+recon = finite.ifrt(rt_lena, N)
+subsetsMValues = compute_slopes(subsetsAngles, True, N)
 
-            #-------------------------------
-            # %%
-            #acquired Mojette projections
-            mt_lena = mojette.transform(lena, angles)
-            # im = mojette.backproject(mt_lena, angles, N, N)
+# start = time.time() #time generation
+recon, mses, psnrs, ssims = osem_expand(iterations, p, rt_lena, \
+        subsetsMValues, finite.frt, finite.ifrt, lena, mask)
 
-            if addNoise: 
-                for idx, proj in enumerate(mt_lena): 
-                    mt_lena[idx] += finite.noise_mt(mt_lena[idx], SNR)
+plt.imshow(recon, cmap='gray')
+plt.show()
 
-            # im_noisy = mojette.backproject(mt_lena, angles, N, N)
+# end = time.time()
+# elapsed = end - start
+# print("OSEM Reconstruction took " + str(elapsed) + " secs or " + str(elapsed/60) \
+#     + " mins in total")
+# file = 'its_{}_angles_{}.npz'.format(addNoise, iterations, len(angles))
+# np.savez(file, recon=recon, time=elapsed)
 
-            #plot difference between images just to confirm 
-            # fig, ax = plt.subplots(nrows=1, ncols=3, figsize=(16, 8))
-            # ax[0].imshow(im)
-            # ax[1].imshow(im_noisy)
-            # ax[2].imshow(im_noisy - im)
-            # plt.show()
-
-            # %%
-            #convert to radon projections for recon
-            rt_lena = mojette.toDRT(mt_lena, angles, N, N + 1, N + 1) 
-            #convert to 2D FT Space
-            subsetsMValues = compute_slopes(subsetsAngles, True, p)
-            powSpectLena = np.zeros((N, N)) # empty 2DFT
-            fill_dft(rt_lena, subsetsMValues, powSpectLena)
-            recon = finite.ifrt(rt_lena, N)
-            # # convert 2D FT space to an interperatable image
-            # lena_fractal = [[min(abs(j), 1) for j in array ] for array in powSpectLena]
-            # plt.imshow(lena_fractal)
-            # plt.show()
-
-            # %%
-            # start = time.time() #time generation
-            # recon, mses, psnrs, ssims = osem_expand_complex(iterations, p, rt_lena, \
-            #                                                 subsetsMValues, finite.frt, \
-            #                                                     finite.ifrt, lena, mask)
-            # print(recon[0])
-            plt.imshow(recon, cmap='gray')
-            plt.show()
-            # end = time.time()
-            # elapsed = end - start
-            # print("OSEM Reconstruction took " + str(elapsed) + " secs or " + str(elapsed/60) \
-            #     + " mins in total")
-            # file = 'its_{}_angles_{}.npz'.format(addNoise, iterations, len(angles))
-            # np.savez(file, recon=recon, time=elapsed)
-
-# %%
+    

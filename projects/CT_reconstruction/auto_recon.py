@@ -42,14 +42,16 @@ from skimage.restoration import denoise_tv_chambolle, denoise_nl_means
 import scipy.fftpack as fftpack
 import pyfftw
 import numpy as np
-import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 import pandas as pd
 import time
 import matplotlib
 import os
 import math
+
 matplotlib.use('Qt4Agg')
+import matplotlib.pyplot as plt
+
 
 # Monkey patch in fftn and ifftn from pyfftw.interfaces.scipy_fftpack
 fftpack.fft2 = pyfftw.interfaces.scipy_fftpack.fft2
@@ -191,7 +193,7 @@ def plot_angles(angles):
 parameters = [0.4, 1, 760, 12, 12.0] #r=4
 
 #parameters
-n = 257
+n = 256
 k = parameters[1]
 M = int(k*n)
 N = n 
@@ -222,8 +224,11 @@ addNoise = False
 max_angles = 56
 
 
-angles, subsetsAngles, _ = mojette.angleSubSets_Symmetric(s,
-                                                subsetsMode, N, N, 2, True, K)
+angles, subsetsAngles, _ = mojette.angleSubSets_Symmetric(s,subsetsMode,N,N,1,True,K)
+perpAngle = farey.farey(1,0)
+angles.append(perpAngle)
+subsetsAngles[0].append(perpAngle)
+
 plot_angles(angles)
 # opposite_angles = []
 # for angleSet in subsetsAngles: 
@@ -236,20 +241,25 @@ plot_angles(angles)
 # subsetsAngles[0].append(perpAngle)
 # plot_angles(angles)
 
+
 print("Number of Angles:", len(angles))
 print("angles:", angles)
 
 p = nt.nearestPrime(M)
 lena, mask = imageio.phantom(N, p, True, np.uint32, True)
+
+# %%
 # #-------------------------------
 
 #acquired Mojette projections
 mt_lena = mojette.transform(lena, angles)
 #convert to radon projections for recon
-rt_lena = mojette.toDRT(mt_lena, angles, N, N, N) 
-recon = finite.ifrt(rt_lena, N)
-subsetsMValues = compute_slopes(subsetsAngles, True, N)
+rt_lena = mojette.toDRT(mt_lena, angles, p, N, N) 
+recon = finite.ifrt(rt_lena, p)
 
+subsetsMValues = compute_slopes(subsetsAngles, True, p)
+
+# %%
 # start = time.time() #time generation
 recon, mses, psnrs, ssims = osem_expand(iterations, p, rt_lena, \
         subsetsMValues, finite.frt, finite.ifrt, lena, mask)
@@ -265,3 +275,4 @@ plt.show()
 # np.savez(file, recon=recon, time=elapsed)
 
     
+# %%

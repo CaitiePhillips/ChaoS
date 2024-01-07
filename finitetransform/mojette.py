@@ -240,8 +240,11 @@ def toDRT(projections, angles, N, P, Q, center=False):
             p, q = farey.get_pq(angles[index])
             
             m, inv = farey.toFinite(angles[index], N)
-
             frtSpace[m][:] = finiteProjection(proj, angles[index], P, Q, N, center)
+
+            if m != 0 and m != N: #dont repeat these
+                m = N-m
+                frtSpace[m][:] = finiteProjection(proj, angles[index], P, Q, N, center)
     
     return frtSpace
 

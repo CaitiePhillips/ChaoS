@@ -199,7 +199,7 @@ M = int(k*n)
 N = n 
 K = parameters[0]
 s = parameters[3]
-iterations = 10 #parameters[2]
+iterations = 100 #parameters[2]
 subsetsMode = 1
 SNR = 20
 floatType = float# np.complex
@@ -225,11 +225,12 @@ max_angles = 56
 
 
 angles, subsetsAngles, _ = mojette.angleSubSets_Symmetric(s,subsetsMode,N,N,1,True,K)
+
 perpAngle = farey.farey(1,0)
 angles.append(perpAngle)
 subsetsAngles[0].append(perpAngle)
 
-plot_angles(angles)
+# plot_angles(angles)
 # opposite_angles = []
 # for angleSet in subsetsAngles: 
 #     new = [farey.farey(-1* angle.imag, 1 * angle.real) for angle in angleSet]
@@ -255,17 +256,20 @@ lena, mask = imageio.phantom(N, p, True, np.uint32, True)
 mt_lena = mojette.transform(lena, angles)
 #convert to radon projections for recon
 rt_lena = mojette.toDRT(mt_lena, angles, p, N, N) 
+
 recon = finite.ifrt(rt_lena, p)
 
 subsetsMValues = compute_slopes(subsetsAngles, True, p)
 
-# %%
-# start = time.time() #time generation
-recon, mses, psnrs, ssims = osem_expand(iterations, p, rt_lena, \
-        subsetsMValues, finite.frt, finite.ifrt, lena, mask)
-
 plt.imshow(recon, cmap='gray')
 plt.show()
+# %%
+# start = time.time() #time generation
+# recon, mses, psnrs, ssims = osem_expand(iterations, p, rt_lena, \
+#         subsetsMValues, finite.frt, finite.ifrt, lena, mask)
+
+# plt.imshow(recon, cmap='gray')
+# plt.show()
 
 # end = time.time()
 # elapsed = end - start

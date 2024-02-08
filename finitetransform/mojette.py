@@ -447,7 +447,7 @@ def angleSubSets_Symmetric(s, mode, P, Q, octant=0, binLengths=False, K = 1, l =
     maxPQ = max(P,Q)
 
     fareyVectors.compactOff()
-    fareyVectors.generate(maxPQ-1, 1)
+    fareyVectors.generatePrime(maxPQ-1, 1)
     vectors = fareyVectors.vectors
     if l == -1: 
         # no order, randomise

@@ -336,6 +336,71 @@ class Farey:
             angle1 = angle2
             angle2 = nextAngle
         
+    def generatePrime(self, n, octants=1): 
+        del self.vectors[:] #clear list
+        
+        nthVector = farey(1, n) # 1/n
+        angle1 = self.startVector # 0/1
+        angle2 = nthVector
+        self.vectors.append(self.startVector)
+        
+        nextAngle = farey(0, 0)
+        while nextAngle != self.endVector: # 1/1
+            if self.compact:
+                nextAngle = self.nextCompactFarey(n, angle1, angle2)
+            else:
+                nextAngle = self.nextFarey(n, angle1, angle2)
+
+            if is_gauss_prime(nextAngle): 
+                print("okie")
+                self.vectors.append(nextAngle)
+#            print nextAngle
+            angle1 = angle2
+            angle2 = nextAngle
+            
+        self.vectors.append(nthVector)
+        
+        secondOctantVectors = []
+        if octants > 1:
+            #first quadrant, second octant
+            for nextAngle in self.vectors:
+                if not nextAngle.imag == nextAngle.real:
+                    nextOctantAngle = farey(nextAngle.real, nextAngle.imag) #mirror
+                    secondOctantVectors.append(nextOctantAngle)
+                
+            self.vectors += secondOctantVectors #merge lists
+            
+        firstQuadrantVectors = self.vectors
+        if octants > 2: 
+            #second quadrant
+            secondQuadrantVectors = []
+            for nextAngle in firstQuadrantVectors:
+                if nextAngle.imag == 0 or nextAngle.real == 0:
+                    continue
+                nextOctantAngle = farey(nextAngle.imag, -nextAngle.real) #reflect x
+                secondQuadrantVectors.append(nextOctantAngle)
+                
+            self.vectors += secondQuadrantVectors #merge lists
+            
+        if octants > 4: #do all quadrants
+            #third quadrant
+            thirdQuadrantVectors = []
+            for nextAngle in firstQuadrantVectors:
+                nextOctantAngle = farey(-nextAngle.imag, -nextAngle.real) #reflect x, y
+                thirdQuadrantVectors.append(nextOctantAngle)
+                
+            self.vectors += thirdQuadrantVectors #merge lists
+            
+            #forth quadrant
+            forthQuadrantVectors = []
+            for nextAngle in firstQuadrantVectors:
+                nextOctantAngle = farey(-nextAngle.imag, nextAngle.real) #reflex y
+                forthQuadrantVectors.append(nextOctantAngle)
+                
+            self.vectors += forthQuadrantVectors #merge lists
+        
+        self.generated = True
+
     def generateRange(self, n, angleMin, angleMax, octants=1, radians=True):
         '''
         Generate all the Farey vectors up to given n within given angle range inclusive.

@@ -18,6 +18,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 '''
+
 import math
 import finitetransform.numbertheory as nt #local modules
 
@@ -88,6 +89,19 @@ def angle(angle, radians=True):
         return theta
     else:
         return 180/math.pi*theta
+    
+def is_gauss_prime(angle): 
+    '''
+    Return True if q+pi is a Gaussian prime
+    '''
+    p, q = get_pq(angle)
+    if  nt.is_prime(p**2 + q**2): 
+        return True
+    elif p == 0 and abs(q) % 4 == 3:
+        return True
+    elif q == 0 and abs(p) % 4 == 3:
+        return True
+    return False
     
 def toFinite(fareyVector, N):
     '''
@@ -420,3 +434,5 @@ class Farey:
                 return [x for (n,x) in sorted(zip(norms,self.vectors), key=lambda pair: pair[0])]
             else:
                 return [y for (n,y,x) in sorted(zip(norms,self.finiteAngles,self.vectors), key=lambda pair: pair[0])], [x for (n,y,x) in sorted(zip(norms,self.finiteAngles,self.vectors), key=lambda pair: pair[0])]
+
+    

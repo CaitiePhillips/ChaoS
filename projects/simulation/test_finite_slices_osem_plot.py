@@ -59,7 +59,7 @@ pyfftw.interfaces.cache.enable()
 #parameter sets (K, k, i, s, h)
 #phantom
 #parameters = [1.2, 1, 381, 30, 8.0] #r=2
-parameters = [0.4, 1, 760, 12, 12.0] #r=4
+parameters = [0.4, 1, 100, 12, 12.0] #r=4
 #cameraman
 #parameters = [1.2, 1, 381, 30, 8.0] #r=2
 
@@ -280,7 +280,7 @@ diff = lena - recon
 
 #save mat file of result
 #np.savez('result_osem.npz', recon=recon, diff=diff, psnrs=psnrs, ssims=ssims)
-np.savez('result_phantom_osem.npz', recon=recon, diff=diff, psnrs=psnrs, ssims=ssims)
+np.savez('phantom_less_primes.npz', recon=recon, diff=diff, psnrs=psnrs, ssims=ssims)
 #np.savez('result_camera_osem.npz', recon=recon, diff=diff, psnrs=psnrs, ssims=ssims)
 
 #plot

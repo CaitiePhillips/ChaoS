@@ -380,7 +380,10 @@ def angleSet_Symmetric(P, Q, octant=0, binLengths=False, K = 1):
 
     fareyVectors.compactOff()
     fareyVectors.generate(maxPQ-1, 1)
-    vectors = fareyVectors.vectors
+    vectors = []
+    for vec in fareyVectors.vectors: 
+        if farey.is_gauss_prime(vec): 
+            vectors.append(vec)
     sortedVectors = sorted(vectors, key=lambda x: x.real**2+x.imag**2) #sort by L2 magnitude
     
     index = 0
@@ -447,7 +450,7 @@ def angleSubSets_Symmetric(s, mode, P, Q, octant=0, binLengths=False, K = 1, l =
     maxPQ = max(P,Q)
 
     fareyVectors.compactOff()
-    fareyVectors.generatePrime(maxPQ-1, 1)
+    fareyVectors.generate(maxPQ-1, 1)
     vectors = fareyVectors.vectors
     if l == -1: 
         # no order, randomise

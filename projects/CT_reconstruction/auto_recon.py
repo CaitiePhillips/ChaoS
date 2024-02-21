@@ -223,45 +223,46 @@ iterations = 100
 addNoise = False
 max_angles = 56
 
-
-angles, subsetsAngles, _ = mojette.angleSubSets_Symmetric(s,subsetsMode,N,N,1,True,K)
-
-perpAngle = farey.farey(1,0)
-angles.append(perpAngle)
-subsetsAngles[0].append(perpAngle)
-
-# plot_angles(angles)
-# opposite_angles = []
-# for angleSet in subsetsAngles: 
-#     new = [farey.farey(-1* angle.imag, 1 * angle.real) for angle in angleSet]
-#     opposite_angles.append(new)
-#     angles += new 
-
-# perpAngle = farey.farey(1,0)
-# angles.append(perpAngle)
-# subsetsAngles[0].append(perpAngle)
-# plot_angles(angles)
-
-
-print("Number of Angles:", len(angles))
-print("angles:", angles)
-
 p = nt.nearestPrime(M)
 lena, mask = imageio.phantom(N, p, True, np.uint32, True)
 
-# %%
-# #-------------------------------
+angles, subsetsAngles, _ = mojette.angleSubSets_Symmetric(s,subsetsMode,N,N,2,True,K, max_angles=20)
+# neg_angles = []
+# for angle in angles: 
+#     p, q = farey.get_pq(angle)
+#     neg_angles.append(farey.farey(p, q))
+# angles = neg_angles
 
-#acquired Mojette projections
+perpAngle = farey.farey(0,-1)
+angles.append(perpAngle)
+subsetsAngles[0].append(perpAngle)
+
 mt_lena = mojette.transform(lena, angles)
-#convert to radon projections for recon
 rt_lena = mojette.toDRT(mt_lena, angles, p, N, N) 
 
 recon = finite.ifrt(rt_lena, p)
+powerSpect = fftpack.fft2(recon)
 
-subsetsMValues = compute_slopes(subsetsAngles, True, p)
+plt.imshow(recon)
+plt.show()
+angles, subsetsAngles, _ = mojette.angleSubSets_Symmetric(s,subsetsMode,N,N,2,True,K, max_angles=20)
+# neg_angles = []
+# for angle in angles: 
+#     p, q = farey.get_pq(angle)
+#     neg_angles.append(farey.farey(p, q))
+# angles = neg_angles
 
-plt.imshow(recon, cmap='gray')
+perpAngle = farey.farey(0,-1)
+angles.append(perpAngle)
+subsetsAngles[0].append(perpAngle)
+
+mt_lena = mojette.transform(lena, angles)
+rt_lena = mojette.toDRT(mt_lena, angles, p, N, N) 
+
+recon = finite.ifrt(rt_lena, p)
+powerSpect = fftpack.fft2(recon)
+
+plt.imshow(recon)
 plt.show()
 # %%
 # start = time.time() #time generation

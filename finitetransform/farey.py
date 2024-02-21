@@ -101,7 +101,7 @@ def toFinite(fareyVector, N):
         q += N #necessary for quadrants other than the first
     if p < 0:
         p += N #necessary for quadrants other than the first
-#    print("p:", p, "q:", q)
+    # print("p:", p, "q:", q, "N:", N)
 
     mValue = 0
     inv = 1
@@ -109,12 +109,14 @@ def toFinite(fareyVector, N):
         inv = nt.minverse(qNeg, N)
 #        identity = (inv*q)%N
         mValue = (p*inv)%N
-#        print "vec:", fareyVector, "m:", mValue, "inv:", inv, "I:", identity
+        # print("vec:", fareyVector, "m:", mValue, "inv:", inv)
     else: #perp projection
         inv = nt.minverse(p, N)
-        mValue = (q*inv)%N + N 
-#        print "perp vec:", fareyVector, "m:", mValue, "inv:", inv
-
+#        mValue = (q*inv)%N + N 
+        mValue = int((q*inv)%N) + N 
+        # print("perp vec:", fareyVector, "m:", mValue, "inv:", inv)
+    if qNeg < 0: 
+        mValue = N - mValue
     return mValue, inv
     
 def finiteTranslateOffset(fareyVector, N, P, Q):

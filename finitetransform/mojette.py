@@ -23,6 +23,7 @@ limitations under the License.
 """
 import finitetransform.farey as farey #local module
 import finitetransform.radon as radon
+import finitetransform.numbertheory as nt
 import numpy as np
 import scipy.fftpack as fftpack
 import pyfftw
@@ -242,10 +243,6 @@ def toDRT(projections, angles, N, P, Q, center=False):
             m, inv = farey.toFinite(angles[index], N)
             frtSpace[m][:] = finiteProjection(proj, angles[index], P, Q, N, center)
 
-            if m != 0 and m != N: #dont repeat these
-                m = N-m
-                frtSpace[m][:] = finiteProjection(proj, angles[index], P, Q, N, center)
-    
     return frtSpace
 
 #helper functions

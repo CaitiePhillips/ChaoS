@@ -97,25 +97,20 @@ def toFinite(fareyVector, N):
     p, q = get_pq(fareyVector)
     coprime = nt.is_coprime(abs(q), N)
     qNeg = q #important, if q < 0, preserve for minverse.
-    if q < 0:
-        q += N #necessary for quadrants other than the first
-    if p < 0:
-        p += N #necessary for quadrants other than the first
-    # print("p:", p, "q:", q, "N:", N)
+    pNeg = p #important, if q < 0, preserve for minverse.
+    q = abs(q)
+    p = abs(p)
 
     mValue = 0
     inv = 1
     if coprime:
-        inv = nt.minverse(qNeg, N)
-#        identity = (inv*q)%N
+        inv = nt.minverse(q, N) #prev (qNeg, N)
         mValue = (p*inv)%N
-        # print("vec:", fareyVector, "m:", mValue, "inv:", inv)
     else: #perp projection
         inv = nt.minverse(p, N)
-#        mValue = (q*inv)%N + N 
         mValue = int((q*inv)%N) + N 
-        # print("perp vec:", fareyVector, "m:", mValue, "inv:", inv)
-    if qNeg < 0: 
+        print("iden:", inv * p)
+    if qNeg * pNeg< 0: 
         mValue = N - mValue
     return mValue, inv
     

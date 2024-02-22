@@ -44,8 +44,6 @@ import numpy as np
 import finite
 import time
 import math
-import matplotlib.pyplot as plt
-from matplotlib.colors import LinearSegmentedColormap
 
 import matplotlib
 matplotlib.use('Qt4Agg')
@@ -58,19 +56,16 @@ fftpack.ifft = pyfftw.interfaces.scipy_fftpack.ifft
 
 # Turn on the cache for optimum performance
 pyfftw.interfaces.cache.enable()
-# Define the colors for the colormap
-colors = [(0, 0, 0), (1, 0, 0)]  # Black and Pink
-custom_cmap = LinearSegmentedColormap.from_list("black_red", colors, N=256)
 
 #parameter sets (K, k, i, s, h)
 #phantom
-parameters = [1.2, 1, 381, 30, 8.0] #r=2
-# parameters = [0.4, 1, 760, 12, 12.0] #r=4
+#parameters = [1.2, 1, 381, 30, 8.0] #r=2
+parameters = [0.4, 1, 100, 12, 12.0] #r=4
 #cameraman
 #parameters = [1.2, 1, 381, 30, 8.0] #r=2
 
 #parameters
-n = 257 #prime for not dyadic size
+n = 256
 k = parameters[1]
 M = int(k*n)
 N = n 
@@ -79,7 +74,7 @@ s = parameters[3]
 iterations = parameters[2]
 subsetsMode = 1
 SNR = 30
-floatType = np.complex
+floatType = np.float
 twoQuads = True
 addNoise = True
 plotCroppedImages = True
@@ -97,6 +92,7 @@ pDash = nt.nearestPrime(N)
 print("p':", pDash)
 angles, subsetsAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,N,N,1,True,K)
 #angles, subsetsAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,M,M,1,True,K)
+ct_angles = angles 
 perpAngle = farey.farey(1,0)
 angles.append(perpAngle)
 subsetsAngles[0].append(perpAngle)
@@ -116,43 +112,33 @@ lena, mask = imageio.phantom(N, p, True, np.uint32, True)
 #lena, mask = imageio.cameraman(N, p, True, np.uint32, True)
 
 #-------------------------------
-# # k-space
-# #2D FFT
-# print("Creating kSpace")
-# fftLena = fftpack.fft2(lena) #the '2' is important
-# fftLenaShifted = fftpack.fftshift(fftLena)
-# #power spectrum
-# powSpectLena = np.abs(fftLenaShifted)
-# %%
-print("Creating sinogram")
-mt_lena = mojette.transform(lena, angles)
-rt_lena = mojette.toDRT(mt_lena, angles, N, N, N) #sinogram
-# plt.imshow(rt_lena)
-# plt.axis("off")
-# plt.show()
+#k-space
+#2D FFT
+print("Creating kSpace")
+fftLena = fftpack.fft2(lena) #the '2' is important
+fftLenaShifted = fftpack.fftshift(fftLena)
+#power spectrum
+powSpectLena = np.abs(fftLenaShifted)
 
-#experimenting with mojette, plot projections
-# pad each mt so same length to plot
-max_len = max([len(mt) for mt in mt_lena])
-mt_padded = np.zeros((N + 1, max_len))
-for i, mt in enumerate(mt_lena): 
-    m, inv = farey.toFinite(angles[i], N)
+#add noise to kSpace
+noise = finite.noise(fftLenaShifted, SNR)
+if addNoise:
+    fftLenaShifted += noise
 
-    mt = np.array(mt_lena[i])
-    mt_padded[m] = np.pad(mt, (max_len - len(mt))//2, 'constant')
+#Recover full image with noise
+print("Actual noisy image")
+reconLena = fftpack.ifft2(fftLenaShifted) #the '2' is important
+reconLena = np.abs(reconLena)
+reconNoise = lena - reconLena
 
-# plt.imshow(mt_padded)
-# plt.axis("off")
-# plt.show()
+mse = imageio.immse(lena, np.abs(reconLena))
+ssim = imageio.imssim(lena.astype(float), np.abs(reconLena).astype(float))
+psnr = imageio.impsnr(lena, np.abs(reconLena))
+print("Acutal RMSE:", math.sqrt(mse))
+print("Acutal SSIM:", ssim)
+print("Acutal PSNR:", psnr)
 
-# print("angles:", angles)
-# im = mojette.backproject(mt_lena, angles, N, N)
-
-# v
-
-# %%
-#compute slopes of given angles
-powSpectLena = np.zeros((N, N)) # empty 2DFT
+#compute lines
 centered = True
 subsetsLines = []
 subsetsMValues = []
@@ -162,6 +148,7 @@ for angles in subsetsAngles:
     mValues = []
     for angle in angles:
         m, inv = farey.toFinite(angle, p)
+        p_angle, q_angle = farey.get_pq(angle)
         u, v = radon.getSliceCoordinates2(m, powSpectLena, centered, p)
         lines.append((u,v))
         mValues.append(m)
@@ -169,6 +156,7 @@ for angles in subsetsAngles:
         if twoQuads:
             if m != 0 and m != p: #dont repeat these
                 m = p-m
+                ct_angles.append(farey.farey(p_angle, -1 * q_angle))
                 u, v = radon.getSliceCoordinates2(m, powSpectLena, centered, p)
                 lines.append((u,v))
                 mValues.append(m)
@@ -178,34 +166,45 @@ for angles in subsetsAngles:
 print("Number of lines:", mu)
 print(subsetsMValues)
 
-# fill in the 2D FT
-mValues = [m for mSet in subsetsMValues for m in mSet] #FIXME: this is not simple complexity wise i think
-for m in mValues: 
-    slice = fftpack.fft(rt_lena[m])
-    radon.setSlice(m, powSpectLena, slice)
+#samples used
+sampleNumber = (p-1)*mu
+print("Samples used:", sampleNumber, ", proportion:", sampleNumber/float(N*N))
+print("Lines proportion:", mu/float(N))
 
-powSpectLena = fftpack.fftshift(powSpectLena)
-powSpectLena = powSpectLena + np.flipud(powSpectLena) # conj symmetric
-result = fftpack.ifft2(powSpectLena) 
-# lena_fractal = max(20 * np.log10(abs(powSpectLena)), 20)
-lena_fractal = [[min(abs(i), 1) for i in array ] for array in powSpectLena]
+#-------------
+# Measure finite slice
+from scipy import ndimage
 
-figure, axis = plt.subplots(1, 3)
+print("Measuring slices")
+drtSpace = np.zeros((p+1, p), floatType)
+for lines, mValues in zip(subsetsLines, subsetsMValues):
+    for i, line in enumerate(lines):
+        u, v = line
+        sliceReal = ndimage.map_coordinates(np.real(fftLenaShifted), [u,v])
+        sliceImag = ndimage.map_coordinates(np.imag(fftLenaShifted), [u,v])
+        slice = sliceReal+1j*sliceImag
+    #    print("slice", i, ":", slice)
+        finiteProjection = fftpack.ifft(slice) # recover projection using slice theorem
+        drtSpace[mValues[i],:] = finiteProjection
+#print("drtSpace:", drtSpace)
+        
+#-------------------------------
+from matplotlib import pyplot as plt
 
-axis[0].imshow(rt_lena)
-axis[0].set_title("DRT")
-axis[0].axis("off")
+mt_lena = mojette.transform(lena, ct_angles)
+rt_lena = mojette.toDRT(mt_lena, ct_angles, p, N, N) 
 
-axis[1].imshow(lena_fractal, cmap = custom_cmap)
-axis[1].set_title("2D FT")
-axis[1].axis("off")
+# recon = finite.ifrt(rt_lena, p)
 
-axis[2].imshow(np.abs(result), cmap='gray')
-axis[2].set_title("Recon")
-axis[2].axis("off")
+# fig, (ax1, ax2, ax3) = plt.subplots(1, 3)
+# ax1.imshow(drtSpace.real)
+# ax2.imshow(rt_lena)
+# ax3.imshow(abs(rt_lena - drtSpace.real))
+# # plt.imshow(abs(rt_lena - drtSpace.real))
+# plt.show()
 
 # %%
-#-------------------------------
+#------------------------ -------
 #define MLEM
 def osem_expand_complex(iterations, p, g_j, os_mValues, projector, backprojector, image, mask, epsilon=1e3, dtype=np.int32):
     '''
@@ -284,21 +283,117 @@ def osem_expand_complex(iterations, p, g_j, os_mValues, projector, backprojector
 #-------------------------------
 #reconstruct test using MLEM   
 start = time.time() #time generation
-recon, mses, psnrs, ssims = osem_expand_complex(iterations, p, rt_lena, subsetsMValues, finite.frt_complex, finite.ifrt_complex, lena, mask)
+recon, mses, psnrs, ssims = osem_expand_complex(iterations, p, rt_lena, subsetsMValues, finite.frt, finite.ifrt, lena, mask)
 recon = np.abs(recon)
 print("Done")
 end = time.time()
 elapsed = end - start
 print("OSEM Reconstruction took " + str(elapsed) + " secs or " + str(elapsed/60) + " mins in total")
 
-fig, ax = plt.subplots(1, 2)
+mse = imageio.immse(imageio.immask(lena, mask, N, N), imageio.immask(recon, mask, N, N))
+ssim = imageio.imssim(imageio.immask(lena, mask, N, N).astype(float), imageio.immask(recon, mask, N, N).astype(float))
+psnr = imageio.impsnr(imageio.immask(lena, mask, N, N), imageio.immask(recon, mask, N, N))
+print("RMSE:", math.sqrt(mse))
+print("SSIM:", ssim)
+print("PSNR:", psnr)
+diff = lena - recon
 
-ax[0].imshow(lena, cmap = 'gray')
-ax[0].set_title("original")
-ax[0].axis("off")
+#save mat file of result
+#np.savez('result_osem.npz', recon=recon, diff=diff, psnrs=psnrs, ssims=ssims)
+np.savez('result_phantom_osem.npz', recon=recon, diff=diff, psnrs=psnrs, ssims=ssims)
+#np.savez('result_camera_osem.npz', recon=recon, diff=diff, psnrs=psnrs, ssims=ssims)
 
-ax[1].imshow(recon, cmap = 'gray')
-ax[1].set_title("recon")
-ax[1].axis("off")
+#plot
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_pdf import PdfPages
+
+#pp = PdfPages('finite_osem_plots.pdf')
+pp = PdfPages('finite_osem_phantom_plots.pdf')
+#pp = PdfPages('finite_osem_camera_plots.pdf')
+
+fig, ax = plt.subplots(figsize=(24, 9))
+
+if plotCroppedImages:
+    print(lena.shape)
+    print(mask.shape)
+    lena = imageio.immask(lena, mask, N, N)
+    reconLena = imageio.immask(reconLena, mask, N, N)
+    reconNoise = imageio.immask(reconNoise, mask, N, N)
+    recon = imageio.immask(recon, mask, N, N)
+    diff = imageio.immask(diff, mask, N, N)
+
+plt.subplot(121)
+rax = plt.imshow(reconLena, interpolation='nearest', cmap='gray')
+#rax = plt.imshow(reconLena, cmap='gray')
+rcbar = plt.colorbar(rax, cmap='gray')
+plt.title('Image (w/ Noise)')
+plt.subplot(122)
+rax2 = plt.imshow(recon, interpolation='nearest', cmap='gray')
+#rax2 = plt.imshow(recon, cmap='gray')
+rcbar2 = plt.colorbar(rax2, cmap='gray')
+plt.title('Reconstruction')
+pp.savefig()
+
+fig, ax = plt.subplots(figsize=(24, 9))
+
+
+plt.subplot(151)
+rax = plt.imshow(lena, interpolation='nearest', cmap='gray')
+#rax = plt.imshow(lena, cmap='gray')
+rcbar = plt.colorbar(rax, cmap='gray')
+plt.title('Image')
+plt.subplot(152)
+rax = plt.imshow(reconLena, interpolation='nearest', cmap='gray')
+#rax = plt.imshow(reconLena, cmap='gray')
+rcbar = plt.colorbar(rax, cmap='gray')
+plt.title('Image (w/ Noise)')
+plt.subplot(153)
+rax = plt.imshow(reconNoise, interpolation='nearest', cmap='gray')
+#rax = plt.imshow(reconNoise, cmap='gray')
+rcbar = plt.colorbar(rax, cmap='gray')
+plt.title('Noise')
+plt.subplot(154)
+rax2 = plt.imshow(recon, interpolation='nearest', cmap='gray')
+#rax2 = plt.imshow(recon, cmap='gray')
+rcbar2 = plt.colorbar(rax2, cmap='gray')
+plt.title('Reconstruction')
+plt.subplot(155)
+rax3 = plt.imshow(diff, interpolation='nearest', cmap='gray')
+#rax3 = plt.imshow(diff, cmap='gray')
+rcbar3 = plt.colorbar(rax3, cmap='gray')
+plt.title('Reconstruction Errors')
+pp.savefig()
+
+#plot convergence
+fig, ax = plt.subplots(figsize=(24, 9))
+
+mseValues = np.array(mses)
+psnrValues = np.array(psnrs)
+ssimValues = np.array(ssims)
+incX = np.arange(0, len(mses))*plotIncrement
+
+plt.subplot(131)
+plt.plot(incX, np.sqrt(mseValues))
+plt.title('Error Convergence of the Finite OSEM')
+plt.xlabel('Iterations')
+plt.ylabel('RMSE')
+plt.subplot(132)
+plt.plot(incX, psnrValues)
+plt.ylim(0, 45.0)
+plt.title('PSNR Convergence of the Finite OSSEM')
+plt.xlabel('Iterations')
+plt.ylabel('PSNR')
+plt.subplot(133)
+plt.plot(incX, ssimValues)
+plt.ylim(0, 1.0)
+plt.title('Simarlity Convergence of the Finite OSSEM')
+plt.xlabel('Iterations')
+plt.ylabel('SSIM')
+pp.savefig()
+pp.close()
 
 plt.show()
+
+print("Complete")
+
+# %%

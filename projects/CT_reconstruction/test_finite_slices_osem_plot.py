@@ -90,14 +90,14 @@ print("N:", N, "M:", M, "s:", s, "i:", iterations)
 
 pDash = nt.nearestPrime(N)
 print("p':", pDash)
-angles, subsetsAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,N,N,1,True,K)
+angles, subsetsAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,N,N,2,True,K, max_angles=25)
 #angles, subsetsAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,M,M,1,True,K)
-ct_angles = angles 
 perpAngle = farey.farey(1,0)
 angles.append(perpAngle)
 subsetsAngles[0].append(perpAngle)
 print("Number of Angles:", len(angles))
 print("angles:", angles)
+ct_angles = angles
 
 p = nt.nearestPrime(M)
 print("p:", p)
@@ -107,87 +107,36 @@ if not mojette.isKatzCriterion(N, N, angles):
     print("Warning: Katz Criterion not met")
 
 #create test image
-#lena, mask = imageio.lena(N, p, True, np.uint32, True)
 lena, mask = imageio.phantom(N, p, True, np.uint32, True)
-#lena, mask = imageio.cameraman(N, p, True, np.uint32, True)
 
-#-------------------------------
-#k-space
-#2D FFT
-print("Creating kSpace")
-fftLena = fftpack.fft2(lena) #the '2' is important
-fftLenaShifted = fftpack.fftshift(fftLena)
-#power spectrum
-powSpectLena = np.abs(fftLenaShifted)
-
-#add noise to kSpace
-noise = finite.noise(fftLenaShifted, SNR)
-if addNoise:
-    fftLenaShifted += noise
-
-#Recover full image with noise
-print("Actual noisy image")
-reconLena = fftpack.ifft2(fftLenaShifted) #the '2' is important
-reconLena = np.abs(reconLena)
-reconNoise = lena - reconLena
-
-mse = imageio.immse(lena, np.abs(reconLena))
-ssim = imageio.imssim(lena.astype(float), np.abs(reconLena).astype(float))
-psnr = imageio.impsnr(lena, np.abs(reconLena))
-print("Acutal RMSE:", math.sqrt(mse))
-print("Acutal SSIM:", ssim)
-print("Acutal PSNR:", psnr)
-
-#compute lines
-centered = True
-subsetsLines = []
+#compute m subsets
 subsetsMValues = []
-mu = 0
 for angles in subsetsAngles:
-    lines = []
     mValues = []
     for angle in angles:
         m, inv = farey.toFinite(angle, p)
-        p_angle, q_angle = farey.get_pq(angle)
-        u, v = radon.getSliceCoordinates2(m, powSpectLena, centered, p)
-        lines.append((u,v))
         mValues.append(m)
-        #second quadrant
-        if twoQuads:
-            if m != 0 and m != p: #dont repeat these
-                m = p-m
-                ct_angles.append(farey.farey(p_angle, -1 * q_angle))
-                u, v = radon.getSliceCoordinates2(m, powSpectLena, centered, p)
-                lines.append((u,v))
-                mValues.append(m)
-    subsetsLines.append(lines)
     subsetsMValues.append(mValues)
-    mu += len(lines)
-print("Number of lines:", mu)
 print(subsetsMValues)
 
-#samples used
-sampleNumber = (p-1)*mu
-print("Samples used:", sampleNumber, ", proportion:", sampleNumber/float(N*N))
-print("Lines proportion:", mu/float(N))
+# #add noise to drtSpace
+# noise = finite.noise(fftLenaShifted, SNR)
+# if addNoise:
+#     fftLenaShifted += noise
 
-#-------------
-# Measure finite slice
-from scipy import ndimage
+# #Recover full image with noise
+# print("Actual noisy image")
+# reconLena = fftpack.ifft2(fftLenaShifted) #the '2' is important
+# reconLena = np.abs(reconLena)
+# reconNoise = lena - reconLena
 
-print("Measuring slices")
-drtSpace = np.zeros((p+1, p), floatType)
-for lines, mValues in zip(subsetsLines, subsetsMValues):
-    for i, line in enumerate(lines):
-        u, v = line
-        sliceReal = ndimage.map_coordinates(np.real(fftLenaShifted), [u,v])
-        sliceImag = ndimage.map_coordinates(np.imag(fftLenaShifted), [u,v])
-        slice = sliceReal+1j*sliceImag
-    #    print("slice", i, ":", slice)
-        finiteProjection = fftpack.ifft(slice) # recover projection using slice theorem
-        drtSpace[mValues[i],:] = finiteProjection
-#print("drtSpace:", drtSpace)
-        
+# mse = imageio.immse(lena, np.abs(reconLena))
+# ssim = imageio.imssim(lena.astype(float), np.abs(reconLena).astype(float))
+# psnr = imageio.impsnr(lena, np.abs(reconLena))
+# print("Acutal RMSE:", math.sqrt(mse))
+# print("Acutal SSIM:", ssim)
+# print("Acutal PSNR:", psnr)
+
 #-------------------------------
 from matplotlib import pyplot as plt
 
@@ -313,12 +262,14 @@ pp = PdfPages('finite_osem_phantom_plots.pdf')
 
 fig, ax = plt.subplots(figsize=(24, 9))
 
+reconLena = finite.ifrt(rt_lena, p)
+
 if plotCroppedImages:
     print(lena.shape)
     print(mask.shape)
     lena = imageio.immask(lena, mask, N, N)
     reconLena = imageio.immask(reconLena, mask, N, N)
-    reconNoise = imageio.immask(reconNoise, mask, N, N)
+    # reconNoise = imageio.immask(reconNoise, mask, N, N)
     recon = imageio.immask(recon, mask, N, N)
     diff = imageio.immask(diff, mask, N, N)
 
@@ -347,11 +298,11 @@ rax = plt.imshow(reconLena, interpolation='nearest', cmap='gray')
 #rax = plt.imshow(reconLena, cmap='gray')
 rcbar = plt.colorbar(rax, cmap='gray')
 plt.title('Image (w/ Noise)')
-plt.subplot(153)
-rax = plt.imshow(reconNoise, interpolation='nearest', cmap='gray')
-#rax = plt.imshow(reconNoise, cmap='gray')
-rcbar = plt.colorbar(rax, cmap='gray')
-plt.title('Noise')
+# plt.subplot(153)
+# rax = plt.imshow(reconNoise, interpolation='nearest', cmap='gray')
+# #rax = plt.imshow(reconNoise, cmap='gray')
+# rcbar = plt.colorbar(rax, cmap='gray')
+# plt.title('Noise')
 plt.subplot(154)
 rax2 = plt.imshow(recon, interpolation='nearest', cmap='gray')
 #rax2 = plt.imshow(recon, cmap='gray')

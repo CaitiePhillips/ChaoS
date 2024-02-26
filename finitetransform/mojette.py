@@ -462,8 +462,8 @@ def angleSubSets_Symmetric(s, mode, P, Q, octant=0, binLengths=False, K = 1, l =
     angles.append(sortedVectors[index])
     subsetAngles[subsetIndex].append(sortedVectors[index])
     binLengthList.append(projectionLength(sortedVectors[index],P,Q))
-    while not isKatzCriterion(P, Q, angles, K) and index < len(sortedVectors): # check Katz
-    # while index < len(sortedVectors) and index < max_angles: # check Katz
+    # while not isKatzCriterion(P, Q, angles, K) and index < len(sortedVectors): # check Katz
+    while index < len(sortedVectors) and index < max_angles: # check Katz
 
         index += 1
         angles.append(sortedVectors[index])

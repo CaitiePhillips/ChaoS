@@ -109,8 +109,7 @@ def toFinite(fareyVector, N):
     else: #perp projection
         inv = nt.minverse(p, N)
         mValue = int((q*inv)%N) + N 
-        print("iden:", inv * p)
-    if qNeg * pNeg< 0: 
+    if qNeg * pNeg < 0: 
         mValue = N - mValue
     return mValue, inv
     

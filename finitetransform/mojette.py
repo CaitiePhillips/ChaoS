@@ -362,7 +362,7 @@ def angleSet_Finite(p, quadrants=1, finiteList=False):
         
     return finalVectors
     
-def angleSet_Symmetric(P, Q, octant=0, binLengths=False, K = 1, prime_only=False, max_angles = 10):
+def angleSet_Symmetric(P, Q, octant=0, binLengths=False, K = 1, prime_only=False, max_angles = 10, norm=lambda x: x.real**2+x.imag**2):
     '''
     Generate the minimal L1 angle set for the MT.
     Parameter K controls the redundancy, K = 1 is minimal.
@@ -391,7 +391,7 @@ def angleSet_Symmetric(P, Q, octant=0, binLengths=False, K = 1, prime_only=False
     # for vec in fareyVectors.vectors: 
     #     if farey.is_gauss_prime(vec): 
     #         vectors.append(vec)
-    sortedVectors = sorted(vectors, key=lambda x: x.real**2+x.imag**2) #sort by L2 magnitude
+    sortedVectors = sorted(vectors, key=norm) #sort by L2 magnitude
     
     index = 0
     binLengthList = []

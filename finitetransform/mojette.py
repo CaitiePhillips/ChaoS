@@ -438,7 +438,7 @@ def angleSet_Symmetric(P, Q, octant=0, binLengths=False, K = 1, prime_only=False
         return angles, binLengthList
     return angles
     
-def angleSubSets_Symmetric(s, mode, P, Q, octant=0, binLengths=False, K = 1, l = 2, prime_only = False, max_angles = 10):
+def angleSubSets_Symmetric(s, mode, P, Q, octant=0, binLengths=False, K = 1, prime_only = False, max_angles = 10, norm=lambda x: x.real**2+x.imag**2):
     '''
     Generate the minimal L1 angle set for the MT for s subsets.
     Parameter K controls the redundancy, K = 1 is minimal.
@@ -463,16 +463,9 @@ def angleSubSets_Symmetric(s, mode, P, Q, octant=0, binLengths=False, K = 1, l =
         print("primes")
     else: 
         fareyVectors.generate(maxPQ-1, 1)
+        
     vectors = fareyVectors.vectors
-    if l == -1: 
-        # no order, randomise
-        sortedVectors = vectors
-        random.shuffle(sortedVectors)
-    elif l == 100: 
-        # max 
-        sortedVectors = sorted(vectors, key=lambda x: max(x.real,x.imag)) 
-    else: 
-        sortedVectors = sorted(vectors, key=lambda x: x.real**l+x.imag**l) 
+    sortedVectors = sorted(vectors, key=norm) 
 
     index = 0
     subsetIndex = 0
@@ -540,7 +533,7 @@ def angleSubSets_Symmetric(s, mode, P, Q, octant=0, binLengths=False, K = 1, l =
     if binLengths:
         return angles, subsetAngles, binLengthList
     
-    return angles, subsetAngles
+    return angles, subsetAngles, binLengthList
     
 def angleSetSliceCoordinates(angles, P, Q, N, center=False):
     '''

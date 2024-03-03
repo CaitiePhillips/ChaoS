@@ -89,7 +89,7 @@ print("N:", N, "M:", M, "s:", s, "i:", iterations)
 
 pDash = nt.nearestPrime(N)
 print("p':", pDash)
-angles, subsetsAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,N,N,1,True,K)
+angles, subsetsAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,N,N,1,True,K, prime_only=True, max_angles=15)
 #angles, subsetsAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,M,M,1,True,K)
 perpAngle = farey.farey(1,0)
 angles.append(perpAngle)

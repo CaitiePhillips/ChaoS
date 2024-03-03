@@ -352,9 +352,8 @@ class Farey:
                 nextAngle = self.nextFarey(n, angle1, angle2)
 
             if is_gauss_prime(nextAngle): 
-                print("okie")
                 self.vectors.append(nextAngle)
-#            print nextAngle
+
             angle1 = angle2
             angle2 = nextAngle
             

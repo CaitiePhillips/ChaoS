@@ -362,7 +362,7 @@ def angleSet_Finite(p, quadrants=1, finiteList=False):
         
     return finalVectors
     
-def angleSet_Symmetric(P, Q, octant=0, binLengths=False, K = 1):
+def angleSet_Symmetric(P, Q, octant=0, binLengths=False, K = 1, prime_only=False, max_angles = 10):
     '''
     Generate the minimal L1 angle set for the MT.
     Parameter K controls the redundancy, K = 1 is minimal.
@@ -379,18 +379,26 @@ def angleSet_Symmetric(P, Q, octant=0, binLengths=False, K = 1):
     maxPQ = max(P,Q)
 
     fareyVectors.compactOff()
-    fareyVectors.generate(maxPQ-1, 1)
-    vectors = []
-    for vec in fareyVectors.vectors: 
-        if farey.is_gauss_prime(vec): 
-            vectors.append(vec)
+    if prime_only:
+        fareyVectors.generatePrime(maxPQ-1, 1)
+        print("primes angles only")
+    else: 
+        fareyVectors.generate(maxPQ-1, 1)
+        
+    vectors = fareyVectors.vectors
+    # If want prime subset of vectors: 
+    # vectors = []
+    # for vec in fareyVectors.vectors: 
+    #     if farey.is_gauss_prime(vec): 
+    #         vectors.append(vec)
     sortedVectors = sorted(vectors, key=lambda x: x.real**2+x.imag**2) #sort by L2 magnitude
     
     index = 0
     binLengthList = []
     angles.append(sortedVectors[index])
     binLengthList.append(projectionLength(sortedVectors[index],P,Q))
-    while not isKatzCriterion(P, Q, angles, K) and index < len(sortedVectors): # check Katz
+    # while not isKatzCriterion(P, Q, angles, K) and index < len(sortedVectors): # check Katz
+    while index < len(sortedVectors) and index < max_angles: # check Katz
         index += 1
         angles.append(sortedVectors[index])
         p, q = farey.get_pq(sortedVectors[index]) # p = imag, q = real
@@ -430,7 +438,7 @@ def angleSet_Symmetric(P, Q, octant=0, binLengths=False, K = 1):
         return angles, binLengthList
     return angles
     
-def angleSubSets_Symmetric(s, mode, P, Q, octant=0, binLengths=False, K = 1, l = 2, max_angles = 10):
+def angleSubSets_Symmetric(s, mode, P, Q, octant=0, binLengths=False, K = 1, l = 2, prime_only = False, max_angles = 10):
     '''
     Generate the minimal L1 angle set for the MT for s subsets.
     Parameter K controls the redundancy, K = 1 is minimal.
@@ -450,7 +458,11 @@ def angleSubSets_Symmetric(s, mode, P, Q, octant=0, binLengths=False, K = 1, l =
     maxPQ = max(P,Q)
 
     fareyVectors.compactOff()
-    fareyVectors.generate(maxPQ-1, 1)
+    if prime_only:
+        fareyVectors.generatePrime(maxPQ-1, 1)
+        print("primes")
+    else: 
+        fareyVectors.generate(maxPQ-1, 1)
     vectors = fareyVectors.vectors
     if l == -1: 
         # no order, randomise
@@ -468,8 +480,8 @@ def angleSubSets_Symmetric(s, mode, P, Q, octant=0, binLengths=False, K = 1, l =
     angles.append(sortedVectors[index])
     subsetAngles[subsetIndex].append(sortedVectors[index])
     binLengthList.append(projectionLength(sortedVectors[index],P,Q))
-    while not isKatzCriterion(P, Q, angles, K) and index < len(sortedVectors): # check Katz
-    # while index < len(sortedVectors) and index < max_angles: # check Katz
+    # while not isKatzCriterion(P, Q, angles, K) and index < len(sortedVectors): # check Katz
+    while index < len(sortedVectors) and index < max_angles: # check Katz
 
         index += 1
         angles.append(sortedVectors[index])

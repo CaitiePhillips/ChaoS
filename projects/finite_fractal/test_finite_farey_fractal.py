@@ -18,8 +18,8 @@ import finitetransform.farey as farey #local module
 import numpy as np
 
 #parameters
-N = 512
-M = 2*N
+N = nt.nearestPrime(256)
+M = 4 * N
 K = 1
 twoQuads = True
 print("N:", N, "M:", M)
@@ -28,7 +28,7 @@ print("p:", p)
 pDash = nt.nearestPrime(N)
 print("p':", pDash)
 #angles = mojette.angleSet_Finite(pDash, 2)
-angles, lengths = mojette.angleSet_Symmetric(N,N,1,True,K)
+angles, lengths = mojette.angleSet_Symmetric(N,N,1,True,K, prime_only=True, max_angles=20)
 
 # gaussAngles = []
 # gaussLengths = []
@@ -48,15 +48,10 @@ powerSpect = np.zeros((p,p))
 print("Computing Finite lines...")
 centered = True
 lines = []
-gaussLines = []
 mValues = []
-gaussValues = []
 for angle in angles:
     m, inv = farey.toFinite(angle, p)
     u, v = radon.getSliceCoordinates2(m, powerSpect, centered, p)
-    if farey.is_gauss_prime(angle): 
-        gaussLines.append((u,v))
-        gaussValues.append(m)
     lines.append((u,v))
     mValues.append(m)
     #second quadrant
@@ -64,9 +59,6 @@ for angle in angles:
         if m != 0 and m != p: #dont repeat these
             m = p-m
             u, v = radon.getSliceCoordinates2(m, powerSpect, centered, p)
-            if farey.is_gauss_prime(angle): 
-                gaussLines.append((u,v))
-                gaussValues.append(m)
             lines.append((u,v))
             mValues.append(m)
 mu = len(lines)
@@ -79,7 +71,7 @@ print(mValues)
 import matplotlib.pyplot as plt
 from matplotlib.pyplot import cm 
 
-fig, ax = plt.subplots(nrows=1, ncols=3, figsize=(16, 8))
+fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(16, 8))
 
 plt.gray()
 plt.tight_layout()
@@ -88,7 +80,7 @@ maxLines = len(lines)
 #maxLines = 12
 ax[0].imshow(powerSpect)
 ax[1].imshow(powerSpect)
-ax[2].imshow(powerSpect)
+# ax[2].imshow(powerSpect)
 
 #color=iter(cm.rainbow(np.linspace(0,1,len(lines))))
 color=iter(cm.jet(np.linspace(0,1,maxLines+1)))
@@ -97,24 +89,15 @@ for i, line in enumerate(lines):
     u, v = line
     c=next(color)
     ax[0].plot(u, v, '.r', markersize=1)
-    ax[2].plot(u, v, '.r',markersize=1)
+    ax[1].plot(u, v, '.r',markersize=1)
 
     fareyImage[u,v] = 255
     if i == maxLines:
         break
 
-for i, line in enumerate(gaussLines):
-    u, v = line
-    ax[2].plot(u, v, '.b',markersize=1)
-    ax[1].plot(u, v, '.b',markersize=1)
-
-    fareyImage[u,v] = 255
-    if i == len(gaussLines):
-        break
-
-ax[0].set_title('Sampling for prime size:'+str(p))
-ax[1].set_title('Gauss Sampling for prime size:'+str(p))
-ax[2].set_title('Overlaid')
+# ax[0].set_title('Fractal')
+# ax[1].set_title('Fractal')
+# ax[2].set_title('Overlaid')
 
 #ax[0].set_xlim([0,M])
 #ax[0].set_ylim([0,M])

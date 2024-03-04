@@ -19,6 +19,7 @@ import finitetransform.farey as farey #local module
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.pyplot import cm 
+import random
 
 import scipy.fftpack as fftpack
 import pyfftw
@@ -33,7 +34,7 @@ M = 2 * N
 K = 1
 twoQuads = True
 print("N:", N, "M:", M)
-p = nt.nearestPrime(M)
+p = nt.nearestPrime(M) 
 print("p:", p)
 pDash = nt.nearestPrime(N)
 print("p':", pDash)
@@ -79,15 +80,22 @@ def createFractal(lines, ax, p, plot=True):
     return image
 
 INF_NORM = lambda x: max(x.real, x.imag)
-EUCLID_NORM = lambda x: x.real**2+x.imag**2
+# RAND_NORM = lambda x: x.real**2+x.imag**2
 def elNorm(l): 
     return lambda x: x.real**l+x.imag**l
 
 fareyAngles, fareyLengths = mojette.angleSet_Symmetric(N,N,1,True,K, prime_only=False, max_angles=20, norm=elNorm(1))
 gaussAngles, gaussLengths = mojette.angleSet_Symmetric(N,N,1,True,K, prime_only=True, max_angles=20, norm=elNorm(1))
+
 perpAngle = farey.farey(1,0)
 fareyAngles.append(perpAngle)
 gaussAngles.append(perpAngle)
+
+#gaussian angles in the farey angles
+gaussInFarey = []
+for angle in fareyAngles: 
+    if farey.is_gauss_prime(angle): 
+        gaussInFarey.append(angle)
 
 #angles in fareyAngles but not in gaussAngles (like composite numbers)
 fareyNoGauss = []
@@ -105,38 +113,59 @@ for angle in gaussAngles:
 (gaussLines, gaussMValues) = calcFiniteLines(gaussAngles)
 (fareyNoGaussLines, fareyNoGaussMValues) = calcFiniteLines(fareyNoGauss)
 (gaussNoFareyLines, gaussNoFareyMValues) = calcFiniteLines(gaussNoFarey)
+(gaussInFareyLines, gaussInFareyMValues) = calcFiniteLines(gaussInFarey)
+
 
 plotColour = False
 
-fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(16, 8), squeeze=True)
+fig, ax = plt.subplots(nrows=2, ncols=2, figsize=(16, 8), squeeze=True)
 ax = np.ravel(ax)
 fareyImage = createFractal(fareyLines, ax[0], p, plot=plotColour)
-gaussImage = createFractal(gaussLines, ax[1], p, plot=plotColour)
-ax[0].set_title("Farey Fractal")
-ax[1].set_title("Gauss Fractal")
-
-if plotColour: #if plotColour, will need extra figure, else, prev fig, ax will be used
-    fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(16, 8), squeeze=True)
+gaussImage = createFractal(gaussLines, ax[2], p, plot=plotColour)
+gaussInFareyImage = createFractal(gaussInFareyLines, ax[1], p, plot=plotColour)
 ax[0].imshow(fareyImage)
-ax[1].imshow(gaussImage)
+ax[2].imshow(gaussImage)
+ax[1].imshow(gaussInFareyImage)
+ax[3].imshow(gaussImage - gaussInFareyImage)
 ax[0].set_title("Farey Fractal")
-ax[1].set_title("Gauss Fractal")
+ax[2].set_title("Gauss Fractal")
+ax[1].set_title("Gauss in Farey Fractal")
+ax[3].set_title("extra gauss")
 
-fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(16, 8), squeeze=True)
-ax = np.ravel(ax)
-fareyNoGauss = createFractal(fareyNoGaussLines, ax[0], p, plot=plotColour)
-gaussNoFarey = createFractal(gaussNoFareyLines, ax[1], p, plot=plotColour)
-ax[0].set_title("Farey not in Gauss")
-ax[1].set_title("Gauss not in Farey")
+# fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(16, 8), squeeze=True)
+# ax = np.ravel(ax)
+# fareyImage = createFractal(fareyLines, ax[0], p, plot=plotColour)
+# gaussImage = createFractal(gaussLines, ax[1], p, plot=plotColour)
+# ax[0].set_title("Farey Fractal")
+# ax[1].set_title("Gauss Fractal")
 
-missingFarey = np.maximum(fareyImage - gaussImage, np.zeros((p, p)))
-missingGauss = np.maximum(gaussImage - fareyImage, np.zeros((p, p)))
-if plotColour: #if plotColour, will need extra figure, else, prev fig, ax will be used
-    fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(16, 8), squeeze=True)
-ax[0].imshow(missingFarey)
-ax[1].imshow(missingGauss)
-ax[0].set_title("Farey not in Gauss")
-ax[1].set_title("Gauss not in Farey")
+# if plotColour: #if plotColour, will need extra figure, else, prev fig, ax will be used
+#     fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(16, 8), squeeze=True)
+# ax[0].imshow(fareyImage)
+# ax[1].imshow(gaussImage)
+# ax[0].set_title("Farey Fractal")
+# ax[1].set_title("Gauss Fractal")
+
+# fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(16, 8), squeeze=True)
+# ax = np.ravel(ax)
+# fareyNoGauss = createFractal(fareyNoGaussLines, ax[0], p, plot=plotColour)
+# gaussNoFarey = createFractal(gaussNoFareyLines, ax[1], p, plot=plotColour)
+# ax[0].set_title("Farey not in Gauss")
+# ax[1].set_title("Gauss not in Farey")
+
+# missingFarey = np.maximum(fareyImage - gaussImage, np.zeros((p, p)))
+# missingGauss = np.maximum(gaussImage - fareyImage, np.zeros((p, p)))
+# if plotColour: #if plotColour, will need extra figure, else, prev fig, ax will be used
+#     fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(16, 8), squeeze=True)
+# ax[0].imshow(missingGauss)
+# ax[1].imshow(missingGauss)
+# ax[0].set_title("Gauss not in Farey")
+# ax[0].set_title("Farey not in Gauss")
+
+# ax[0].imshow(missingFarey)
+# ax[1].imshow(missingGauss)
+# ax[0].set_title("Farey not in Gauss")
+# ax[1].set_title("Gauss not in Farey")
 
 plt.show()
 

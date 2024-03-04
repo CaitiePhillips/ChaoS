@@ -122,6 +122,7 @@ def transform(image, angles, dtype=np.int32, prevProjections = []):
         p = int(angles[n].imag)
         q = int(angles[n].real)
         projection = project(image, q, p, dtype)
+        projection = projection * ramp_filter(len(projection))
         if not prevProjections:
             projections.append(projection)
         else:
@@ -209,6 +210,12 @@ def finiteProjection(projection, angle, P, Q, N, center=False):
         
     return finiteProj
 
+def ramp_filter(size):
+    (mmin, mmax) = (0.5, 1)
+    ramp = np.linspace(mmin, mmax, size//2)
+    ramp = np.concatenate((ramp[::-1], [mmin], ramp))
+    return ramp
+
 #inversion methods
 def toDRT(projections, angles, N, P, Q, center=False):
     '''
@@ -225,6 +232,9 @@ def toDRT(projections, angles, N, P, Q, center=False):
     m = 0
     
     frtSpace = np.zeros( (size,N) )
+
+    ramp = ramp_filter(N) 
+    ramp = np.transpose(ramp)[0]
     
     if dyadic:
         print("Dyadic size not tested yet.")
@@ -241,9 +251,9 @@ def toDRT(projections, angles, N, P, Q, center=False):
             p, q = farey.get_pq(angles[index])
             
             m, inv = farey.toFinite(angles[index], N)
-            frtSpace[m][:] = finiteProjection(proj, angles[index], P, Q, N, center)
+            frtSpace[m][:] = finiteProjection(proj, angles[index], P, Q, N, center) 
 
-    return frtSpace
+    return frtSpace * ramp
 
 #helper functions
 def discreteSliceSamples(angle, b, fftShape):

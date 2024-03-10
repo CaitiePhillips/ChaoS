@@ -47,6 +47,7 @@ import math
 
 import matplotlib
 matplotlib.use('Qt4Agg')
+from matplotlib import pyplot as plt
 
 # Monkey patch in fftn and ifftn from pyfftw.interfaces.scipy_fftpack
 fftpack.fft2 = pyfftw.interfaces.scipy_fftpack.fft2
@@ -119,12 +120,16 @@ for angles in subsetsAngles:
     subsetsMValues.append(mValues)
 print(subsetsMValues)
 
-# #add noise to drtSpace
-# noise = finite.noise(fftLenaShifted, SNR)
-# if addNoise:
-#     fftLenaShifted += noise
+#CT
+mt_lena = mojette.transform(lena, ct_angles)
+rt_lena = mojette.toDRT(mt_lena, ct_angles, p, p, p) 
 
-# #Recover full image with noise
+#add noise to drtSpace
+# noise = finite.noise(rt_lena, SNR)
+# if addNoise:
+#     rt_lena += noise
+
+#Recover full image with noise
 # print("Actual noisy image")
 # reconLena = fftpack.ifft2(fftLenaShifted) #the '2' is important
 # reconLena = np.abs(reconLena)
@@ -136,22 +141,6 @@ print(subsetsMValues)
 # print("Acutal RMSE:", math.sqrt(mse))
 # print("Acutal SSIM:", ssim)
 # print("Acutal PSNR:", psnr)
-
-#-------------------------------
-from matplotlib import pyplot as plt
-
-mt_lena = mojette.transform(lena, ct_angles)
-rt_lena = mojette.toDRT(mt_lena, ct_angles, p, N, N) 
-
-# recon = finite.ifrt(rt_lena, p)
-
-# fig, (ax1, ax2, ax3) = plt.subplots(1, 3)
-# ax1.imshow(drtSpace.real)
-# ax2.imshow(rt_lena)
-# ax3.imshow(abs(rt_lena - drtSpace.real))
-# # plt.imshow(abs(rt_lena - drtSpace.real))
-# plt.show()
-
 # %%
 #------------------------ -------
 #define MLEM

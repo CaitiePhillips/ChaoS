@@ -98,20 +98,21 @@ def toFinite(fareyVector, N):
     coprime = nt.is_coprime(abs(q), N)
     qNeg = q #important, if q < 0, preserve for minverse.
     pNeg = p #important, if q < 0, preserve for minverse.
-    q = abs(q)
-    p = abs(p)
+    q = N + q if q < 0 else q
+    p = N + p if q < 0 else p
 
     mValue = 0
     inv = 1
     if coprime:
-        inv = nt.minverse(q, N) #prev (qNeg, N)
+        inv = nt.minverse(qNeg, N) 
         mValue = (p*inv)%N
     else: #perp projection
-        inv = nt.minverse(p, N)
+        inv = nt.minverse(pNeg, N)
         mValue = int((q*inv)%N) + N 
     if qNeg * pNeg < 0: 
         mValue = N - mValue
     return mValue, inv
+
     
 def finiteTranslateOffset(fareyVector, N, P, Q):
     '''

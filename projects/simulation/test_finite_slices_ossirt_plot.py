@@ -43,7 +43,7 @@ pyfftw.interfaces.cache.enable()
 #parameter sets (K, k, i, s, h)
 #phantom
 #parameters = [1.2, 1, 381, 4, 8.0] #r=2
-parameters = [0.4, 1, 761, 2, 8.0] #r=4
+parameters = [0.4, 1, 100, 2, 8.0] #r=4
 #camera
 #parameters = [1.2, 1, 380, 4, 6.0] #r=2
 #parameters = [0.4, 1, 760, 2, 6.0] #r=2
@@ -74,7 +74,12 @@ print("N:", N, "M:", M, "s:", s, "i:", iterations, "t:", t)
 
 pDash = nt.nearestPrime(N)
 print("p':", pDash)
-angles, subsetsAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,N,N,1,True,K)
+
+INF_NORM = lambda x: max(x.real, x.imag)
+def elNorm(l): 
+    return lambda x: x.real**l+x.imag**l
+
+angles, subsetsAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,N,N,1,True,K, prime_only=True, max_angles=15, norm=elNorm(2))
 #angles, subsetsAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,M,M,1,True,K)
 perpAngle = farey.farey(1,0)
 angles.append(perpAngle)

@@ -59,7 +59,7 @@ pyfftw.interfaces.cache.enable()
 #parameter sets (K, k, i, s, h)
 #phantom
 #parameters = [1.2, 1, 381, 30, 8.0] #r=2
-parameters = [0.4, 1, 760, 12, 12.0] #r=4
+parameters = [0.4, 1, 100, 12, 12.0] #r=4
 #cameraman
 #parameters = [1.2, 1, 381, 30, 8.0] #r=2
 
@@ -75,7 +75,7 @@ subsetsMode = 1
 SNR = 30
 floatType = np.complex
 twoQuads = True
-addNoise = True
+addNoise = False
 plotCroppedImages = True
 plotColourBar = True
 plotIncrement = 2
@@ -89,7 +89,13 @@ print("N:", N, "M:", M, "s:", s, "i:", iterations)
 
 pDash = nt.nearestPrime(N)
 print("p':", pDash)
-angles, subsetsAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,N,N,1,True,K)
+
+INF_NORM = lambda x: max(x.real, x.imag)
+EUCLID_NORM = lambda x: x.real**2+x.imag**2
+def elNorm(l): 
+    return lambda x: x.real**l+x.imag**l
+
+angles, subsetsAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,N,N,1,True,K, prime_only=False, max_angles=15, norm=elNorm(5))
 #angles, subsetsAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,M,M,1,True,K)
 perpAngle = farey.farey(1,0)
 angles.append(perpAngle)
@@ -184,6 +190,9 @@ for lines, mValues in zip(subsetsLines, subsetsMValues):
         drtSpace[mValues[i],:] = finiteProjection
 #print("drtSpace:", drtSpace)
 
+
+
+# %%
 #-------------------------------
 #define MLEM
 def osem_expand_complex(iterations, p, g_j, os_mValues, projector, backprojector, image, mask, epsilon=1e3, dtype=np.int32):
@@ -280,7 +289,7 @@ diff = lena - recon
 
 #save mat file of result
 #np.savez('result_osem.npz', recon=recon, diff=diff, psnrs=psnrs, ssims=ssims)
-np.savez('result_phantom_osem.npz', recon=recon, diff=diff, psnrs=psnrs, ssims=ssims)
+np.savez('phantom_less_primes.npz', recon=recon, diff=diff, psnrs=psnrs, ssims=ssims)
 #np.savez('result_camera_osem.npz', recon=recon, diff=diff, psnrs=psnrs, ssims=ssims)
 
 #plot

@@ -3,3 +3,4 @@
 *.pyc
 *.npz
 *.csv
+*.json

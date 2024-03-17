@@ -362,7 +362,7 @@ def angleSet_Finite(p, quadrants=1, finiteList=False):
         
     return finalVectors
     
-def angleSet_Symmetric(P, Q, octant=0, binLengths=False, K = 1, prime_only=False, max_angles = 10, norm=lambda x: x.real**2+x.imag**2):
+def angleSet_Symmetric(P, Q, octant=0, binLengths=False, K = 1, prime_only=False, max_angles = 10, norm=lambda x: x.real**2+x.imag**2, start_index=0):
     '''
     Generate the minimal L1 angle set for the MT.
     Parameter K controls the redundancy, K = 1 is minimal.
@@ -393,13 +393,12 @@ def angleSet_Symmetric(P, Q, octant=0, binLengths=False, K = 1, prime_only=False
     #         vectors.append(vec)
     sortedVectors = sorted(vectors, key=norm) #sort by L2 magnitude
     
-    index = 0
+    index = start_index
     binLengthList = []
     angles.append(sortedVectors[index])
     binLengthList.append(projectionLength(sortedVectors[index],P,Q))
-    # sortedVectors = sortedVectors[::-1]
     # while not isKatzCriterion(P, Q, angles, K) and index < len(sortedVectors): # check Katz
-    while index < len(sortedVectors) and index < max_angles: # check Katz
+    while index < len(sortedVectors) and index < max_angles + start_index: # check Katz
         index += 1
         angles.append(sortedVectors[index])
         p, q = farey.get_pq(sortedVectors[index]) # p = imag, q = real

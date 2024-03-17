@@ -399,6 +399,7 @@ class Farey:
             self.vectors += forthQuadrantVectors #merge lists
         
         self.generated = True
+        self.vectors = self.vectors[1::] # 0th angle is not prime
 
     def generateRange(self, n, angleMin, angleMax, octants=1, radians=True):
         '''

@@ -263,6 +263,8 @@ class Farey:
             self.vectors += forthQuadrantVectors #merge lists
         
         self.generated = True
+        # self.vectors = self.vectors[1::] # 0th angle is not prime
+
         
     def generate2(self, n, octants=1):
         '''
@@ -339,6 +341,7 @@ class Farey:
         nthVector = farey(1, n) # 1/n
         angle1 = self.startVector # 0/1
         angle2 = nthVector
+        # if is_gauss_prime(self.startVector):
         self.vectors.append(self.startVector)
         
         nextAngle = farey(0, 0)
@@ -348,8 +351,12 @@ class Farey:
             else:
                 nextAngle = self.nextFarey(n, angle1, angle2)
 
-            if is_gauss_prime(nextAngle): 
-                self.vectors.append(nextAngle)
+            if not is_gauss_prime(nextAngle): 
+                angle1 = angle2
+                angle2 = nextAngle
+                continue
+            
+            self.vectors.append(nextAngle)
 
             angle1 = angle2
             angle2 = nextAngle
@@ -396,7 +403,7 @@ class Farey:
             self.vectors += forthQuadrantVectors #merge lists
         
         self.generated = True
-        self.vectors = self.vectors[1::] # 0th angle is not prime
+        # self.vectors = self.vectors[1::] # 0th angle is not prime
 
     def generateRange(self, n, angleMin, angleMax, octants=1, radians=True):
         '''

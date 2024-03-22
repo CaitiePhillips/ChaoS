@@ -130,10 +130,11 @@ def run_frac(prime, num_angles, start_index, centre_tile):
     angles, lengths = mojette.angleSet_Symmetric(p, p, 1,True,K, 
                                                         prime_only=prime, 
                                                         max_angles=num_angles, 
+                                                        start_index=start_index,
                                                         norm=elNorm(n))
-    if not prime: 
-        perpAngle = farey.farey(1,0)
-        angles.append(perpAngle)
+    # if not prime: 
+    perpAngle = farey.farey(1,0)
+    angles.append(perpAngle)
 
     #make path to save
     title = "projs " + str(num_angles) + " start " + str(start_index)
@@ -146,26 +147,49 @@ def run_frac(prime, num_angles, start_index, centre_tile):
     path += "centre_tile/"
     path += title.replace(" ", "_") + ".npz"
 
-    fractal = plotFractal(angles, plotColour=True, plotReg=False, title=title)
+    fractal = plotFractal(angles, plotColour=False, plotReg=True, title=title)
     if centre_tile:
         addCentreTile(fractal, 10, circle=False)
 
-    np.savez(path, fractal=fractal)
+    # np.savez(path, fractal=fractal)
 
     plt.figure()
+    return fractal
 
-
-# %% get projection angles
+# %%
+prime_frac = True
 num_angles = 20
-start_index = 10
+start_index = 0
 centre_tile = True
 
-for centre_tile in [True]:
-    for num_angles in [10, 20, 50, 75]:
-        starts = np.unique([max(num_angles - i, 0) for i in [0, 5, 10, 15]])
-        for start_index in starts:
-            run_frac(num_angles, start_index, centre_tile)
-plt.show()
+gauss_angles, lengths = mojette.angleSet_Symmetric(p, p, 1,True,K, 
+                                                        prime_only=True, 
+                                                        max_angles=num_angles, 
+                                                        start_index=start_index,
+                                                        norm=elNorm(n))
+farey_angles, lengths = mojette.angleSet_Symmetric(p, p, 1,True,K, 
+                                                        prime_only=False, 
+                                                        max_angles=num_angles, 
+                                                        start_index=start_index,
+                                                        norm=elNorm(n))
+orphan_angles = []
+for farey in farey_angles: 
+    if farey not in gauss_angles: 
+        orphan_angles.append(farey)
+print(orphan_angles)
+
+# %% get projection angles
+# prime_frac = True
+# num_angles = 20
+# start_index = 0
+# centre_tile = True
+
+# for centre_tile in [True]:
+#     for num_angles in [20, 50]:
+#         for start_index in [0]:
+#             gaussian = run_frac(prime_frac, num_angles, start_index, centre_tile)
+
+# plt.show()
 
 """ 
 # angles in fareyAngles but not in gaussAngles (like composite numbers)

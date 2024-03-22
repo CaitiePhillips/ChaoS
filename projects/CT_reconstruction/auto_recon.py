@@ -190,19 +190,24 @@ def plot_angles(angles):
     plt.grid(visible=True, which='both', axis='both')
     plt.show()
 
-parameters = [0.4, 1, 760, 12, 12.0] #r=4
+#parameter sets (K, k, i, s, h)
+#phantom
+#parameters = [1.2, 1, 381, 30, 8.0] #r=2
+parameters = [0.4, 1, 100, 12, 12.0] #r=4
+#cameraman
+#parameters = [1.2, 1, 381, 30, 8.0] #r=2
 
 #parameters
-n = 256
+n = 256 
 k = parameters[1]
 M = int(k*n)
 N = n 
 K = parameters[0]
 s = parameters[3]
-iterations = 100 #parameters[2]
+iterations = parameters[2]
 subsetsMode = 1
-SNR = 20
-floatType = float# np.complex
+SNR = 30
+floatType = np.float
 twoQuads = True
 addNoise = True
 plotCroppedImages = True
@@ -218,66 +223,115 @@ print("N:", N, "M:", M, "s:", s, "i:", iterations)
 
 pDash = nt.nearestPrime(N)
 print("p':", pDash)
-
-iterations = 100
-addNoise = False
-max_angles = 56
+angles, subsetsAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,N,N,2,True,K, max_angles=20, prime_only=True)
+print("Number of Angles:", len(angles))
+print("angles:", angles)
+ct_angles = angles
 
 p = nt.nearestPrime(M)
+print("p:", p)
+
+#check if Katz compliant
+if not mojette.isKatzCriterion(N, N, angles):
+    print("Warning: Katz Criterion not met")
+
+#create test image
 lena, mask = imageio.phantom(N, p, True, np.uint32, True)
 
-angles, subsetsAngles, _ = mojette.angleSubSets_Symmetric(s,subsetsMode,N,N,2,True,K, max_angles=20)
-# neg_angles = []
-# for angle in angles: 
-#     p, q = farey.get_pq(angle)
-#     neg_angles.append(farey.farey(p, q))
-# angles = neg_angles
+#compute m subsets
+subsetsMValues = []
+for angles in subsetsAngles:
+    mValues = []
+    for angle in angles:
+        m, inv = farey.toFinite(angle, p)
+        mValues.append(m)
+    subsetsMValues.append(mValues)
+# print(subsetsMValues)
 
-perpAngle = farey.farey(0,-1)
-angles.append(perpAngle)
-subsetsAngles[0].append(perpAngle)
+#CT
+mt_lena = mojette.transform(lena, ct_angles)
+rt_lena = mojette.toDRT(mt_lena, ct_angles, p, p, p) 
 
-mt_lena = mojette.transform(lena, angles)
-rt_lena = mojette.toDRT(mt_lena, angles, p, N, N) 
+recon, mses, psnrs, ssims = osem_expand(iterations, p, rt_lena, subsetsMValues, finite.frt, finite.ifrt, lena, mask)
+recon = np.abs(recon)
 
-recon = finite.ifrt(rt_lena, p)
-powerSpect = fftpack.fft2(recon)
+mse = imageio.immse(imageio.immask(lena, mask, N, N), imageio.immask(recon, mask, N, N))
+ssim = imageio.imssim(imageio.immask(lena, mask, N, N).astype(float), imageio.immask(recon, mask, N, N).astype(float))
+psnr = imageio.impsnr(imageio.immask(lena, mask, N, N), imageio.immask(recon, mask, N, N))
+print("RMSE:", math.sqrt(mse))
+print("SSIM:", ssim)
+print("PSNR:", psnr)
 
-plt.imshow(recon)
+
+reconLena = finite.ifrt(rt_lena, p)
+diff = lena - recon
+mseValues = np.array(mses)
+psnrValues = np.array(psnrs)
+ssimValues = np.array(ssims)
+
+if plotCroppedImages:
+    print(lena.shape)
+    print(mask.shape)
+    lena = imageio.immask(lena, mask, N, N)
+    reconLena = imageio.immask(reconLena, mask, N, N)
+    # reconNoise = imageio.immask(reconNoise, mask, N, N)
+    recon = imageio.immask(recon, mask, N, N)
+    diff = imageio.immask(diff, mask, N, N)
+
+fig, ax = plt.subplots(figsize=(24, 9))
+plt.subplot(121)
+rax = plt.imshow(reconLena, interpolation='nearest', cmap='gray')
+rcbar = plt.colorbar(rax, cmap='gray', orientation="horizontal")
+plt.title('Inverse DRT')
+plt.subplot(122)
+rax2 = plt.imshow(recon, interpolation='nearest', cmap='gray')
+rcbar2 = plt.colorbar(rax2, cmap='gray', orientation="horizontal")
+plt.title('Reconstruction')
+
+
+fig, ax = plt.subplots(figsize=(24, 9))
+plt.subplot(221)
+rax = plt.imshow(lena, interpolation='nearest', cmap='gray')
+rcbar = plt.colorbar(rax, cmap='gray')
+plt.title('Original Image')
+plt.subplot(222)
+rax = plt.imshow(reconLena, interpolation='nearest', cmap='gray')
+rcbar = plt.colorbar(rax, cmap='gray')
+plt.title('Inverse DRT')
+plt.subplot(223)
+rax2 = plt.imshow(recon, interpolation='nearest', cmap='gray')
+rcbar2 = plt.colorbar(rax2, cmap='gray')
+plt.title('Reconstruction')
+plt.subplot(224)
+rax3 = plt.imshow(diff, interpolation='nearest', cmap='gray')
+rcbar3 = plt.colorbar(rax3, cmap='gray')
+plt.title('Reconstruction Errors')
+# plt.subplot(153)
+# rax = plt.imshow(reconLena - lena, interpolation='nearest', cmap='gray')
+# rcbar = plt.colorbar(rax, cmap='gray')
+# plt.title('Noise')
+
+fig, ax = plt.subplots(figsize=(24, 9))
+
+
+incX = np.arange(0, len(mses))*plotIncrement
+
+plt.subplot(131)
+plt.plot(incX, np.sqrt(mseValues))
+plt.title('Error Convergence of the Finite OSEM')
+plt.xlabel('Iterations')
+plt.ylabel('RMSE')
+plt.subplot(132)
+plt.plot(incX, psnrValues)
+plt.ylim(0, 45.0)
+plt.title('PSNR Convergence of the Finite OSSEM')
+plt.xlabel('Iterations')
+plt.ylabel('PSNR')
+plt.subplot(133)
+plt.plot(incX, ssimValues)
+plt.ylim(0, 1.0)
+plt.title('Simarlity Convergence of the Finite OSSEM')
+plt.xlabel('Iterations')
+plt.ylabel('SSIM')
+
 plt.show()
-angles, subsetsAngles, _ = mojette.angleSubSets_Symmetric(s,subsetsMode,N,N,2,True,K, max_angles=20)
-# neg_angles = []
-# for angle in angles: 
-#     p, q = farey.get_pq(angle)
-#     neg_angles.append(farey.farey(p, q))
-# angles = neg_angles
-
-perpAngle = farey.farey(0,-1)
-angles.append(perpAngle)
-subsetsAngles[0].append(perpAngle)
-
-mt_lena = mojette.transform(lena, angles)
-rt_lena = mojette.toDRT(mt_lena, angles, p, N, N) 
-
-recon = finite.ifrt(rt_lena, p)
-powerSpect = fftpack.fft2(recon)
-
-plt.imshow(recon)
-plt.show()
-# %%
-# start = time.time() #time generation
-# recon, mses, psnrs, ssims = osem_expand(iterations, p, rt_lena, \
-#         subsetsMValues, finite.frt, finite.ifrt, lena, mask)
-
-# plt.imshow(recon, cmap='gray')
-# plt.show()
-
-# end = time.time()
-# elapsed = end - start
-# print("OSEM Reconstruction took " + str(elapsed) + " secs or " + str(elapsed/60) \
-#     + " mins in total")
-# file = 'its_{}_angles_{}.npz'.format(addNoise, iterations, len(angles))
-# np.savez(file, recon=recon, time=elapsed)
-
-    
-# %%

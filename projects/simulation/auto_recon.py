@@ -47,6 +47,7 @@ import math
 import matplotlib
 matplotlib.use('Qt4Agg')
 from scipy import ndimage
+from matplotlib import pyplot as plt
 
 
 # Monkey patch in fftn and ifftn from pyfftw.interfaces.scipy_fftpack
@@ -57,6 +58,7 @@ fftpack.ifft = pyfftw.interfaces.scipy_fftpack.ifft
 
 # Turn on the cache for optimum performance
 pyfftw.interfaces.cache.enable()
+
 
 #parameter sets (K, k, i, s, h)
 #phantom
@@ -163,11 +165,277 @@ def osem_expand_complex(iterations, p, g_j, os_mValues, projector, backprojector
             mses.append(mse)
             psnrs.append(psnr)
             ssims.append(ssim)
+            print(str(i) + "/" + str(iterations), "RMSE:", math.sqrt(mse), "PSNR:", psnr, "SSIM:", ssim, end='\r')
 
-        print("iteration:", str(i) + "/" + str(iterations), end = "\r")
-        
     return f, mses, psnrs, ssims
 
+def reconstruct(subsetsAngles, image, mask, p, addNoise, iterations): 
+    """
+    reconstruct the given image from data only at the given angles
+
+    angles [list[list[int]]]: list of angles to reconstruct from
+    image [np array]: original image to reconstruct
+    addNoise [bool]: True if add noise to the k space pre reconstruction
+
+    returns the reconstructed image and corresponding rmse, psnr, ssim
+    """
+
+    #k-space
+    fftImage = fftpack.fft2(image) #the '2' is important
+    fftImageShifted = fftpack.fftshift(fftImage)
+
+    #power spectrum
+    powSpectImage = np.abs(fftImageShifted)
+
+    #add noise to kSpace
+    noise = finite.noise(fftImageShifted, SNR)
+    if addNoise:
+        fftImageShifted += noise
+
+    #Recover full image with noise
+    reconImage = fftpack.ifft2(fftImageShifted) #the '2' is important
+    reconImage = np.abs(reconImage)
+    reconNoise = image - reconImage
+
+    mse = imageio.immse(image, np.abs(reconImage))
+    ssim = imageio.imssim(image.astype(float), np.abs(reconImage).astype(float))
+    psnr = imageio.impsnr(image, np.abs(reconImage))
+
+    #compute lines
+    centered = True
+    subsetsLines = []
+    subsetsMValues = []
+    mu = 0
+    for angles in subsetsAngles:
+        lines = []
+        mValues = []
+        for angle in angles:
+            m, inv = farey.toFinite(angle, p)
+            u, v = radon.getSliceCoordinates2(m, powSpectImage, centered, p)
+            lines.append((u,v))
+            mValues.append(m)
+            #second quadrant
+            if twoQuads:
+                if m != 0 and m != p: #dont repeat these
+                    m = p-m
+                    u, v = radon.getSliceCoordinates2(m, powSpectImage, centered, p)
+                    lines.append((u,v))
+                    mValues.append(m)
+        subsetsLines.append(lines)
+        subsetsMValues.append(mValues)
+        mu += len(lines)
+    #samples used
+    sampleNumber = (p-1)*mu
+
+    #-------------
+    # Measure finite slice
+
+    drtSpace = np.zeros((p+1, p), floatType)
+    for lines, mValues in zip(subsetsLines, subsetsMValues):
+        for i, line in enumerate(lines):
+            u, v = line
+            sliceReal = ndimage.map_coordinates(np.real(fftImageShifted), [u,v])
+            sliceImag = ndimage.map_coordinates(np.imag(fftImageShifted), [u,v])
+            slice = sliceReal+1j*sliceImag
+            finiteProjection = fftpack.ifft(slice) # recover projection using slice theorem
+            drtSpace[mValues[i],:] = finiteProjection
+
+    recon, mses, psnrs, ssims = osem_expand_complex(iterations, p, drtSpace, subsetsMValues, finite.frt_complex, finite.ifrt_complex, image, mask)
+    
+    return recon, mses, psnrs, ssims
+
+def auto_recon_1(test_angles, iterations):
+    """
+    recon image with varying max_angles for both prime and regular reconstruction.
+    saves rmse, psnr, ssim data for all angles.  
+
+    test_angles [list]: list of max_angles
+    """
+
+    rmse_all = [[], []]
+    ssim_all = [[], []]
+    psnr_all = [[], []]
+
+    for j, prime in enumerate(primes): 
+        for k, max_angles in enumerate(test_angles):
+            angles, subsetsAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,N,N,1,True,K, prime_only=prime, max_angles=max_angles)
+            #angles, subsetsAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,M,M,1,True,K)
+            perpAngle = farey.farey(1,0)
+            angles.append(perpAngle)
+            subsetsAngles[0].append(perpAngle)
+
+            p = nt.nearestPrime(M)
+
+            #create test image
+            lena, mask = imageio.phantom(N, p, True, np.uint32, True)
+
+            recon, mses, psnrs, ssims = reconstruct(subsetsAngles, lena, mask, p, addNoise, iterations)
+
+            rmse_all[prime].append(np.array(mses))
+            psnr_all[prime].append(np.array(psnrs))
+            ssim_all[prime].append(np.array(ssims))
+            
+            recon = np.abs(recon)
+
+            mse = imageio.immse(imageio.immask(lena, mask, N, N), imageio.immask(recon, mask, N, N))
+            ssim = imageio.imssim(imageio.immask(lena, mask, N, N).astype(float), imageio.immask(recon, mask, N, N).astype(float))
+            psnr = imageio.impsnr(imageio.immask(lena, mask, N, N), imageio.immask(recon, mask, N, N))
+            print("\nmax angles", max_angles, "prime", bool(prime))
+            print("RMSE:", math.sqrt(mse))
+            print("SSIM:", ssim)
+            print("PSNR:", psnr)
+
+
+    path = "results/tests/test_recon_its_" + str(iterations) + ".npz"
+    np.savez(path, angles=test_angles, iterations=iterations, rmse=rmse_all, psnr=psnr_all, ssim=ssim_all)
+
+def auto_recon_2(test_angles, iterations): 
+    """
+    recon image with the prime and composite angles which make up the max angles within test_angles. .
+    saves rmse, psnr, ssim data for all reconstructions.  
+
+    test_angles [list]: list of max_angles
+    """
+    rmse_all = [[], []]
+    ssim_all = [[], []]
+    psnr_all = [[], []]
+
+    for numAngles in test_angles:
+        angles, subsetsAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,N,N,1,True,K, prime_only=False, max_angles=numAngles)
+        #angles, subsetsAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,M,M,1,True,K)
+        perpAngle = farey.farey(1,0)
+        angles.append(perpAngle)
+        subsetsAngles[0].append(perpAngle)
+
+        p = nt.nearestPrime(M)
+
+        #split angles in prime and composites 
+        primeSubset = []
+        compositeSubset = []
+        for angles in subsetsAngles:
+            primes = []
+            composites = []
+            for angle in angles:
+                if farey.is_gauss_prime(angle) or abs(angle) == 1: 
+                    primes.append(angle)
+                else: 
+                    composites.append(angle)
+            if primes != []:
+                primeSubset.append(primes)
+            if composites != []:
+                compositeSubset.append(composites)
+        
+
+        lena, mask = imageio.phantom(N, p, True, np.uint32, True)
+
+        reconPrime, msesPrime, psnrsPrime, ssimsPrime = reconstruct(primeSubset, lena, mask, p, addNoise, iterations)
+        rmse_all[0].append(np.sqrt(msesPrime))
+        psnr_all[0].append(psnrsPrime)
+        ssim_all[0].append(ssimsPrime)
+
+        reconComposite, msesComposite, psnrsComposite, ssimsComposite = reconstruct(compositeSubset, lena, mask, p, addNoise, iterations)
+        rmse_all[1].append(np.sqrt(msesComposite))
+        psnr_all[1].append(psnrsComposite)
+        ssim_all[1].append(ssimsComposite)
+
+    path = "results/auto_recon_2/recon_its_" + str(iterations) + ".npz"
+    np.savez(path, primeAngles=primeSubset, compositeAngles=compositeSubset, iterations=iterations, rmse=rmse_all, psnr=psnr_all, ssim=ssim_all)
+
+    # plt.subplot(121)
+    # plt.imshow(np.abs(reconPrime))
+    # plt.title("Prime reconstruction")
+
+    # plt.subplot(122)
+    # plt.imshow(np.abs(reconComposite))
+    # plt.title("Composite reconstruction")
+
+    # plt.show()
+
+factors_15 = [(1,  1 ),(1, -1 ),(1,  1 ),(1, -1 ),(1,  1 ),(1, -1 ),(1,  1 ),(1, -1 ),(1,  1 ),(1, -1 ),(2,  1 ),(2, -1 ),(2,  1 ),(2, -1 ),(2,  1 ),(2, -1 ),(2,  1 ),(2, -1 ),(2,  1 ),(2, -1 ),(3,  2 ),(3, -2 ),(4,  1 ),(4, -1 ),(5,  2 ),(5, -2 )]
+factors_25 = [(1,  1), (1, -1), (1,  1), (1, -1), (1,  1), (1, -1), (1,  1), (1, -1), (1,  1), (1, -1), (1,  1), (1, -1), (1,  1), (1, -1), (2,  1), (2, -1), (2,  1), (2, -1), (2,  1), (2, -1), (2,  1), (2, -1), (2,  1), (2, -1), (2,  1), (2, -1), (2,  1), (2, -1), (2,  1), (2, -1), (2,  1), (2, -1), (3,  2), (3, -2), (3,  2), (3, -2), (3,  2), (3, -2), (4,  1), (4, -1), (4,  1), (4, -1), (4,  1), (4, -1), (5,  2), (5, -2), (6,  1), (6, -1), (5,  4), (5, -4)]
+factors_50 = [(1 , 1),(1 ,- 1),(1 , 1),(1 ,- 1),(1 , 1),(1 ,- 1),(1 , 1),(1 ,- 1),(1 , 1),(1 ,- 1),(1 , 1),(1 ,- 1),(1 , 1),(1 ,- 1),(1 , 1),(1 ,- 1),(1 , 1),(1 ,- 1),(1 , 1),(1 ,- 1),(1 , 1),(1 ,- 1),(1 , 1),(1 ,- 1),(1 , 1),(1 ,- 1),(1 , 1),(1 ,- 1),(1 , 1),(1 ,- 1),(1 , 1),(1 ,- 1),(1 , 1),(1 ,- 1),(2 , 1),(2 ,- 1),(2 , 1),(2 ,- 1),(2 , 1),(2 ,- 1),(2 , 1),(2 ,- 1),(2 , 1),(2 ,- 1),(2 , 1),(2 ,- 1),(2 , 1),(2 ,- 1),(2 , 1),(2 ,- 1),(2 , 1),(2 ,- 1),(2 , 1),(2 ,- 1),(2 , 1),(2 ,- 1),(2 , 1),(2 ,- 1),(2 , 1),(2 ,- 1),(2 , 1),(2 ,- 1),(2 , 1),(2 ,- 1),(2 , 1),(2 ,- 1),(2 , 1),(2 ,- 1),(2 , 1),(2 ,- 1),(2 , 1),(2 ,- 1),(2 , 1),(2 ,- 1),(3 , 2),(3 ,- 2),(3 , 2),(3 ,- 2),(3 , 2),(3 ,- 2),(3 , 2),(3 ,- 2),(3 , 2),(3 ,- 2),(3 , 2),(3 ,- 2),(3 , 2),(3 ,- 2),(4 , 1),(4 ,- 1),(4 , 1),(4 ,- 1),(4 , 1),(4 ,- 1),(4 , 1),(4 ,- 1),(4 , 1),(4 ,- 1),(5 , 2),(5 ,- 2),(5 , 2),(5 ,- 2),(5 , 2),(5 ,- 2),(6 , 1),(6 ,- 1),(6 , 1),(6 ,- 1),(6 , 1),(6 ,- 1),(5 , 4),(5 ,- 4),(7 , 2),(7 ,- 2),(6 , 5),(6 ,- 5),(8 , 3),(8 ,- 3),(8 , 5),(8 ,- 5),(9 , 4),(9 ,- 4),(10 , 1),(10 ,- 1)]
+factors_75 = [(1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (3 , 2), (3 ,-2), (3 , 2), (3 ,-2), (3 , 2), (3 ,-2), (3 , 2), (3 ,-2), (3 , 2), (3 ,-2), (3 , 2), (3 ,-2), (3 , 2), (3 ,-2), (3 , 2), (3 ,-2), (3 , 2), (3 ,-2), (4 , 1), (4 ,-1), (4 , 1), (4 ,-1), (4 , 1), (4 ,-1), (4 , 1), (4 ,-1), (4 , 1), (4 ,-1), (4 , 1), (4 ,-1), (4 , 1), (4 ,-1), (4 , 1), (4 ,-1), (4 , 1), (4 ,-1), (5 , 2), (5 ,-2), (5 , 2), (5 ,-2), (5 , 2), (5 ,-2), (5 , 2), (5 ,-2), (5 , 2), (5 ,-2), (6 , 1), (6 ,-1), (6 , 1), (6 ,-1), (6 , 1), (6 ,-1), (5 , 4), (5 ,-4), (5 , 4), (5 ,-4), (5 , 4), (5 ,-4), (7 , 2), (7 ,-2), (7 , 2), (7 ,-2), (7 , 2), (7 ,-2), (6 , 5), (6 ,-5), (6 , 5), (6 ,-5), (6 , 5), (6 ,-5), (8 , 3), (8 ,-3), (8 , 5), (8 ,-5), (9 , 4), (9 ,-4), (10 , 1), (10 ,-1), (10 , 3), (10 ,-3), (8 , 7), (8 ,-7), (11 , 4), (11 ,-4), (10 , 7), (10 ,-7)]
+factor_100 = [(1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (1 , 1), (1 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (2 , 1), (2 ,-1), (3 , 2), (3 ,-2), (3 , 2), (3 ,-2), (3 , 2), (3 ,-2), (3 , 2), (3 ,-2), (3 , 2), (3 ,-2), (3 , 2), (3 ,-2), (3 , 2), (3 ,-2), (3 , 2), (3 ,-2), (3 , 2), (3 ,-2), (3 , 2), (3 ,-2), (3 , 2), (3 ,-2), (3 , 2), (3 ,-2), (3 , 2), (3 ,-2), (3 , 2), (3 ,-2), (3 , 2), (3 ,-2), (4 , 1), (4 ,-1), (4 , 1), (4 ,-1), (4 , 1), (4 ,-1), (4 , 1), (4 ,-1), (4 , 1), (4 ,-1), (4 , 1), (4 ,-1), (4 , 1), (4 ,-1), (4 , 1), (4 ,-1), (4 , 1), (4 ,-1), (5 , 2), (5 ,-2), (5 , 2), (5 ,-2), (5 , 2), (5 ,-2), (5 , 2), (5 ,-2), (5 , 2), (5 ,-2), (5 , 2), (5 ,-2), (5 , 2), (5 ,-2), (6 , 1), (6 ,-1), (6 , 1), (6 ,-1), (6 , 1), (6 ,-1), (6 , 1), (6 ,-1), (6 , 1), (6 ,-1), (5 , 4), (5 ,-4), (5 , 4), (5 ,-4), (5 , 4), (5 ,-4), (5 , 4), (5 ,-4), (5 , 4), (5 ,-4), (7 , 2), (7 ,-2), (7 , 2), (7 ,-2), (7 , 2), (7 ,-2), (6 , 5), (6 ,-5), (6 , 5), (6 ,-5), (6 , 5), (6 ,-5), (8 , 3), (8 ,-3), (8 , 3), (8 ,-3), (8 , 3), (8 ,-3), (8 , 5), (8 ,-5), (9 , 4), (9 ,-4), (10 , 1), (10 ,-1), (10 , 3), (10 ,-3), (8 , 7), (8 ,-7), (11 , 4), (11 ,-4), (10 , 7), (10 ,-7), (11 , 6), (11 ,-6), (13 , 2), (13 ,-2), (10 , 9), (10 ,-9), (12 , 7), (12 ,-7), (14 , 1), (14 ,-1)]
+
+def auto_recon_3(test_angles, iterations): 
+    """
+    recon image with the prime and composite angles which make up the max angles within test_angles. .
+    saves rmse, psnr, ssim data for all reconstructions.  
+
+    test_angles [list]: list of max_angles
+    """
+    rmse_all = [[], []]
+    ssim_all = [[], []]
+    psnr_all = [[], []]
+
+    for numAngles in test_angles:
+        angles, subsetsAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,N,N,1,True,K, prime_only=False, max_angles=numAngles)
+        #angles, subsetsAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,M,M,1,True,K)
+        perpAngle = farey.farey(1,0)
+        angles.append(perpAngle)
+        subsetsAngles[0].append(perpAngle)
+
+        p = nt.nearestPrime(M)
+
+        #split angles in prime and composites 
+        primeFlat = []
+        primeSubset = []
+        compositesFlat = []
+        compositeSubset = []
+        for angles in subsetsAngles:
+            primes = []
+            composites = []
+            for angle in angles:
+                if farey.is_gauss_prime(angle) or abs(angle) == 1: 
+                    primes.append(angle)
+                    primeFlat.append(angle)
+                else: 
+                    composites.append(angle)
+                    compositesFlat.append(angle)
+            if primes != []:
+                primeSubset.append(primes)
+            if composites != []:
+                compositeSubset.append(composites)
+        print(compositesFlat)
+        
+
+        # lena, mask = imageio.phantom(N, p, True, np.uint32, True)
+
+        # reconPrime, msesPrime, psnrsPrime, ssimsPrime = reconstruct(primeSubset, lena, mask, p, addNoise, iterations)
+        # rmse_all[0].append(np.sqrt(msesPrime))
+        # psnr_all[0].append(psnrsPrime)
+        # ssim_all[0].append(ssimsPrime)
+
+        # reconComposite, msesComposite, psnrsComposite, ssimsComposite = reconstruct(compositeSubset, lena, mask, p, addNoise, iterations)
+        # rmse_all[1].append(np.sqrt(msesComposite))
+        # psnr_all[1].append(psnrsComposite)
+        # ssim_all[1].append(ssimsComposite)
+
+    # path = "results/auto_recon_2/recon_its_" + str(iterations) + ".npz"
+    # np.savez(path, primeAngles=primeSubset, compositeAngles=compositeSubset, iterations=iterations, rmse=rmse_all, psnr=psnr_all, ssim=ssim_all)
+
+def nearestPrime(n):
+    '''
+    Return the nearest prime number either side of n. This is done using a search via number of primality tests.
+    '''
+    p_above = n
+    p_below = n
+
+    if n % 2 == 0:
+        p_above += 1
+        p_below -= 1
+    
+    count = 0
+    maxAllowed = 1000000
+    while not (nt.isprime(p_above) or nt.isprime(p_below)) and count < maxAllowed:
+        p_above += 2
+        p_below -= 2
+        count += 1
+
+    if nt.isprime(p_above): 
+        return p_above
+    if nt.isprime(p_below):
+        return p_below
 
 test_angles = [15, 25, 50, 75, 100]
 primes = [0, 1]
@@ -175,9 +443,105 @@ rmse_all = [[], []]
 ssim_all = [[], []]
 psnr_all = [[], []]
 
+def distance_to_prime(angle): 
+        n = int(EUCLID_NORM(angle))
+        return np.abs(n - nearestPrime(n))
+
+def auto_recon_4(numAngles, iterations): 
+    """
+    reconstructs with numAngles of prime angles in addtion to numAdd of composite
+    angles, with angles chosen being the closest to prime numbers via euclidian 
+    distance
+    
+    """
+
+    rmse_all = []
+    ssim_all = []
+    psnr_all = []
+
+    p = nt.nearestPrime(M)
+    lena, mask = imageio.phantom(N, p, True, np.uint32, True)
+
+    angles, subsetsAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,N,N,1,True,K, prime_only=False, max_angles=numAngles)
+    perpAngle = farey.farey(1,0)
+    angles.append(perpAngle)
+    subsetsAngles[0].append(perpAngle)
+
+    
+    #split angles in prime and composites 
+    primeFlat = []
+    primeSubset = []
+    compositesFlat = []
+    compositeSubset = []
+    for angles in subsetsAngles:
+        primes = []
+        composites = []
+        for angle in angles:
+            if farey.is_gauss_prime(angle) or abs(angle) == 1: 
+                primes.append(angle)
+                primeFlat.append(angle)
+            else: 
+                composites.append(angle)
+                compositesFlat.append(angle)
+        if primes != []:
+            primeSubset.append(primes)
+        if composites != []:
+            compositeSubset.append(composites)
+
+    #regular
+    recon, mses, psnrs, ssims = reconstruct(subsetsAngles, lena, mask, p, addNoise, iterations)
+    rmse_all.append(np.sqrt(mses))
+    ssim_all.append(ssims)
+    psnr_all.append(psnrs)
+
+    #prime
+    recon, mses, psnrs, ssims = reconstruct(primeSubset, lena, mask, p, addNoise, iterations)
+    rmse_all.append(np.sqrt(mses))
+    ssim_all.append(ssims)
+    psnr_all.append(psnrs)
+
+    # for additionalAngles in numAdd:
+
+    comps_near_primes = primeSubset
+    sortedVectors = sorted(compositesFlat, key=lambda x: distance_to_prime(x)) 
+    comps_near_primes.append(sortedVectors[0:len(sortedVectors)//2])
+    recon, mses, psnrs, ssims = reconstruct(comps_near_primes, lena, mask, p, addNoise, iterations)
+    rmse_all.append(np.sqrt(mses))
+    ssim_all.append(ssims)
+    psnr_all.append(psnrs)
+
+    comps_far_from_primes = primeSubset
+    sortedVectors = sorted(compositesFlat, key=lambda x: distance_to_prime(x)) 
+    comps_far_from_primes.append(sortedVectors[-len(sortedVectors)//2::])  
+    recon, mses, psnrs, ssims = reconstruct(comps_far_from_primes, lena, mask, p, addNoise, iterations)
+    rmse_all.append(np.sqrt(mses))
+    ssim_all.append(ssims)
+    psnr_all.append(psnrs)
+
+
+    
+    #prime close to prime composites
+    recon=np.abs(recon)
+    legs = ["regular", "prime", "comps_near_primes", "comps_far_from_primes"]
+    plt.subplot(131)
+    for i, rmse in enumerate(rmse_all):
+        plt.plot(rmse, label=legs[i])
+    plt.subplot(132)
+    for i, ssim in enumerate(ssim_all):
+        plt.plot(ssim, label=legs[i])
+    plt.subplot(133)
+    for i, psnr in enumerate(psnr_all): 
+        plt.plot(psnr, label=legs[i])
+    plt.legend()
+    
+    plt.show()
+
+auto_recon_4(25, 100)
+
+"""
 for j, prime in enumerate(primes): 
     for k, max_angles in enumerate(test_angles):
-        angles, subsetsAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,N,N,1,True,K, prime_only=prime, max_angles=max_angles, norm=elNorm(2))
+        angles, subsetsAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,N,N,1,True,K, prime_only=prime, max_angles=max_angles)
         #angles, subsetsAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,M,M,1,True,K)
         perpAngle = farey.farey(1,0)
         angles.append(perpAngle)
@@ -186,9 +550,7 @@ for j, prime in enumerate(primes):
         p = nt.nearestPrime(M)
 
         #create test image
-        #lena, mask = imageio.lena(N, p, True, np.uint32, True)
         lena, mask = imageio.phantom(N, p, True, np.uint32, True)
-        #lena, mask = imageio.cameraman(N, p, True, np.uint32, True)
 
         #-------------------------------
         #k-space
@@ -249,58 +611,25 @@ for j, prime in enumerate(primes):
                 sliceReal = ndimage.map_coordinates(np.real(fftLenaShifted), [u,v])
                 sliceImag = ndimage.map_coordinates(np.imag(fftLenaShifted), [u,v])
                 slice = sliceReal+1j*sliceImag
-            #    print("slice", i, ":", slice)
                 finiteProjection = fftpack.ifft(slice) # recover projection using slice theorem
                 drtSpace[mValues[i],:] = finiteProjection
-        #print("drtSpace:", drtSpace)
 
         
         recon, mses, psnrs, ssims = osem_expand_complex(iterations, p, drtSpace, subsetsMValues, finite.frt_complex, finite.ifrt_complex, lena, mask)
         rmse_all[prime].append(np.array(mses))
         psnr_all[prime].append(np.array(psnrs))
         ssim_all[prime].append(np.array(ssims))
-        print("\n" + (j + 1) * k + "/" + str(len(primes) * len(test_angles)))
         
         recon = np.abs(recon)
 
         mse = imageio.immse(imageio.immask(lena, mask, N, N), imageio.immask(recon, mask, N, N))
         ssim = imageio.imssim(imageio.immask(lena, mask, N, N).astype(float), imageio.immask(recon, mask, N, N).astype(float))
         psnr = imageio.impsnr(imageio.immask(lena, mask, N, N), imageio.immask(recon, mask, N, N))
-        print("max angles", max_angles)
+        print("\nmax angles", max_angles, "prime", bool(prime))
         print("RMSE:", math.sqrt(mse))
         print("SSIM:", ssim)
         print("PSNR:", psnr)
-        print()
+"""
 
-path = "resuts/errors/recon_its_" + str(iterations) + ".npz"
-np.savez("resuts/errors/recon_its", angles=test_angles, rmse=rmse_all, psnr=psnr_all, ssim=ssim_all)
-
-
-from matplotlib import pyplot as plt
-for prime in range(2):
-    for i, rmse in enumerate(rmse_all[prime]): 
-        plt.plot(rmse, label="angles: " + str(test_angles[i]) + " prime: " + str(bool(prime)))
-        
-plt.title("RMSE")
-plt.legend()
-
-plt.figure()
-from matplotlib import pyplot as plt
-for prime in range(2):
-    for i, psnr in enumerate(psnr_all[prime]): 
-        plt.plot(psnr, label="angles: " + str(test_angles[i]) + " prime: " + str(bool(prime)))
-        
-plt.title("PSNR")
-plt.legend()
-
-plt.figure()
-from matplotlib import pyplot as plt
-for prime in range(2):
-    for i, ssim in enumerate(ssim_all[prime]): 
-        plt.plot(ssim, label="angles: " + str(test_angles[i]) + " prime: " + str(bool(prime)))
-plt.title("SSIM")
-plt.legend()
-
-
-plt.show()
-
+# path = "results/errors/recon_its_" + str(iterations) + ".npz"
+# np.savez(path, angles=test_angles, iterations=iterations, rmse=rmse_all, psnr=psnr_all, ssim=ssim_all)

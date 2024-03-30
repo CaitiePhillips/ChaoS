@@ -157,10 +157,10 @@ def run_frac(prime, num_angles, start_index, centre_tile):
     return fractal
 
 # %%
-prime_frac = True
+prime = False
 num_angles = 20
 start_index = 0
-centre_tile = True
+centre_tile = False
 
 gauss_angles, lengths = mojette.angleSet_Symmetric(p, p, 1,True,K, 
                                                         prime_only=True, 
@@ -172,11 +172,42 @@ farey_angles, lengths = mojette.angleSet_Symmetric(p, p, 1,True,K,
                                                         max_angles=num_angles, 
                                                         start_index=start_index,
                                                         norm=elNorm(n))
-orphan_angles = []
-for farey in farey_angles: 
-    if farey not in gauss_angles: 
-        orphan_angles.append(farey)
-print(orphan_angles)
+#identifies composite angles
+# orphan_angles = []
+# for farey in farey_angles: 
+#     if farey not in gauss_angles: 
+#         orphan_angles.append(farey)
+# print(orphan_angles)
+angles, lengths = mojette.angleSet_Symmetric(p, p, 1,True,K, 
+                                                        prime_only=prime, 
+                                                        max_angles=num_angles, 
+                                                        start_index=start_index,
+                                                        norm=elNorm(n))
+# if not prime: 
+perpAngle = farey.farey(1,0)
+angles.append(perpAngle)
+
+# %% regular, prime, composite fractals 
+primes = []
+comps = []
+for angle in angles: 
+    if farey.is_gauss_prime(angle) or abs(angle) == 1: 
+        primes.append(angle)
+    else: 
+        print(angle)
+        comps.append(angle)
+plt.subplot(131)
+fractal = plotFractal(angles, plotColour=False, plotReg=True, title="gauss")
+plt.subplot(132)
+prime_fractal = plotFractal(primes, plotColour=False, plotReg=True, title="gauss")
+plt.subplot(133)
+comp_fractal = plotFractal(comps, plotColour=False, plotReg=True, title="gauss")
+print(len(comps))
+
+
+plt.show()
+
+
 
 # %% get projection angles
 # prime_frac = True

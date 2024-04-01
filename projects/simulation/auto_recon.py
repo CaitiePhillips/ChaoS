@@ -95,7 +95,7 @@ pDash = nt.nearestPrime(N)
 print("p':", pDash)
 
 INF_NORM = lambda x: max(x.real, x.imag)
-EUCLID_NORM = lambda x: x.real**2+x.imag**2
+EUCLID_NORM = lambda x: int(x.real**2+x.imag**2)
 def elNorm(l): 
     return lambda x: x.real**l+x.imag**l
 
@@ -166,7 +166,6 @@ def osem_expand_complex(iterations, p, g_j, os_mValues, projector, backprojector
             psnrs.append(psnr)
             ssims.append(ssim)
             print(str(i) + "/" + str(iterations), "RMSE:", math.sqrt(mse), "PSNR:", psnr, "SSIM:", ssim, end='\r')
-
     return f, mses, psnrs, ssims
 
 def reconstruct(subsetsAngles, image, mask, p, addNoise, iterations): 
@@ -414,7 +413,7 @@ def auto_recon_3(test_angles, iterations):
     # path = "results/auto_recon_2/recon_its_" + str(iterations) + ".npz"
     # np.savez(path, primeAngles=primeSubset, compositeAngles=compositeSubset, iterations=iterations, rmse=rmse_all, psnr=psnr_all, ssim=ssim_all)
 
-def nearestPrime(n):
+def nearestPrime(n, current_primes):
     '''
     Return the nearest prime number either side of n. This is done using a search via number of primality tests.
     '''
@@ -427,15 +426,16 @@ def nearestPrime(n):
     
     count = 0
     maxAllowed = 1000000
-    while not (nt.isprime(p_above) or nt.isprime(p_below)) and count < maxAllowed:
+    while count < maxAllowed:
+        if nt.isprime(p_above) and p_above not in current_primes:
+            return p_above
+        elif nt.isprime(p_below) and p_below not in current_primes: 
+            return p_above
+        
         p_above += 2
         p_below -= 2
         count += 1
-
-    if nt.isprime(p_above): 
-        return p_above
-    if nt.isprime(p_below):
-        return p_below
+        
 
 test_angles = [15, 25, 50, 75, 100]
 primes = [0, 1]
@@ -443,21 +443,26 @@ rmse_all = [[], []]
 ssim_all = [[], []]
 psnr_all = [[], []]
 
-def distance_to_prime(angle): 
-        n = int(EUCLID_NORM(angle))
-        return np.abs(n - nearestPrime(n))
+def distance_to_prime(dist, current_primes=[]): 
+        n = int(dist)
+        return np.abs(n - nearestPrime(n, current_primes))
 
 def auto_recon_4(numAngles, iterations): 
     """
-    reconstructs with numAngles of prime angles in addtion to numAdd of composite
-    angles, with angles chosen being the closest to prime numbers via euclidian 
-    distance
-    
+    Runs the reconstruction of: 
+        1) the regular angle set
+        2) the prime angle set
+        3) the prime angle set plus the composite angle pairs [(a, b), (b, a)] 
+        for all [(a, b), (b, a)] in the composite angle set. 
+    It will save RMSE, PSNR and SSIM for each reconstruction.
+
+    Note, the composite angles are not reordered wihtin this function. 
     """
 
     rmse_all = []
     ssim_all = []
     psnr_all = []
+    legs = []
 
     p = nt.nearestPrime(M)
     lena, mask = imageio.phantom(N, p, True, np.uint32, True)
@@ -493,50 +498,278 @@ def auto_recon_4(numAngles, iterations):
     rmse_all.append(np.sqrt(mses))
     ssim_all.append(ssims)
     psnr_all.append(psnrs)
+    legs.append("regular")
 
     #prime
     recon, mses, psnrs, ssims = reconstruct(primeSubset, lena, mask, p, addNoise, iterations)
     rmse_all.append(np.sqrt(mses))
     ssim_all.append(ssims)
     psnr_all.append(psnrs)
+    legs.append("prime")
 
-    # for additionalAngles in numAdd:
-
-    comps_near_primes = primeSubset
-    sortedVectors = sorted(compositesFlat, key=lambda x: distance_to_prime(x)) 
-    comps_near_primes.append(sortedVectors[0:len(sortedVectors)//2])
-    recon, mses, psnrs, ssims = reconstruct(comps_near_primes, lena, mask, p, addNoise, iterations)
-    rmse_all.append(np.sqrt(mses))
-    ssim_all.append(ssims)
-    psnr_all.append(psnrs)
-
-    comps_far_from_primes = primeSubset
-    sortedVectors = sorted(compositesFlat, key=lambda x: distance_to_prime(x)) 
-    comps_far_from_primes.append(sortedVectors[-len(sortedVectors)//2::])  
-    recon, mses, psnrs, ssims = reconstruct(comps_far_from_primes, lena, mask, p, addNoise, iterations)
-    rmse_all.append(np.sqrt(mses))
-    ssim_all.append(ssims)
-    psnr_all.append(psnrs)
+    pairs = []
+    for n in range(len(compositesFlat) // 2):
+        prime_plus = list(primeSubset)
+        prime_plus.append(compositesFlat[2 * n:2 * n + 2])
+        pairs.append(compositesFlat[2 * n:2 * n + 2])
 
 
-    
-    #prime close to prime composites
-    recon=np.abs(recon)
-    legs = ["regular", "prime", "comps_near_primes", "comps_far_from_primes"]
+        recon, mses, psnrs, ssims = reconstruct(prime_plus, lena, mask, p, addNoise, iterations)
+        rmse_all.append(np.sqrt(mses))
+        ssim_all.append(ssims)
+        psnr_all.append(psnrs)
+
+        legs.append("primes + " + str(compositesFlat[2 * n:2 * n + 2]) + " distance: " + str(distance_to_prime(compositesFlat[2 * n])))
+
     plt.subplot(131)
+    iteration_axis = list(range(0, iterations, plotIncrement))
     for i, rmse in enumerate(rmse_all):
-        plt.plot(rmse, label=legs[i])
+        plt.plot(iteration_axis, rmse, label=legs[i])
+        plt.title("RMSE")
+        # plt.legend()    
     plt.subplot(132)
     for i, ssim in enumerate(ssim_all):
-        plt.plot(ssim, label=legs[i])
+        plt.plot(iteration_axis, ssim, label=legs[i])
+        plt.title("SSIM")
+        # plt.legend()    
     plt.subplot(133)
     for i, psnr in enumerate(psnr_all): 
-        plt.plot(psnr, label=legs[i])
-    plt.legend()
-    
+        plt.plot(iteration_axis, psnr, label=legs[i])
+        plt.title("PSNR")
+        plt.legend()
+        
+    path = "results/auto_recon_4b/composite_pair_recon_" + str(iterations) + ".npz"
+    np.savez(path, subsetsOriginal=subsetsAngles, primeSubset=primeSubset, compositePairs=pairs, rmse=rmse_all, psnr=psnr_all, ssim=ssim_all)
     plt.show()
 
-auto_recon_4(25, 100)
+def auto_recon_4b(numAngles, iterations): 
+    """
+    Runs the reconstruction of: 
+        1) the regular angle set
+        2) the prime angle set
+        3) the prime angle set plus the composite angle pairs [(a, b), (b, a)] 
+        for all [(a, b), (b, a)] in the composite angle set. 
+    It will save RMSE, PSNR and SSIM for each reconstruction.
+
+    Note, the composite angles are not reordered wihtin this function. 
+    """
+
+    rmse_all = []
+    ssim_all = []
+    psnr_all = []
+    legs = []
+
+    p = nt.nearestPrime(M)
+    lena, mask = imageio.phantom(N, p, True, np.uint32, True)
+
+    angles, subsetsAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,N,N,1,True,K, prime_only=False, max_angles=numAngles)
+    perpAngle = farey.farey(1,0)
+    angles.append(perpAngle)
+    subsetsAngles[0].append(perpAngle)
+
+    
+    #split angles in prime and composites 
+    primeFlat = []
+    primeSubset = []
+    compositesFlat = []
+    compositeSubset = []
+    for angles in subsetsAngles:
+        primes = []
+        composites = []
+        for angle in angles:
+            if farey.is_gauss_prime(angle) or abs(angle) == 1: 
+                primes.append(angle)
+                primeFlat.append(angle)
+            else: 
+                composites.append(angle)
+                compositesFlat.append(angle)
+        if primes != []:
+            primeSubset.append(primes)
+        if composites != []:
+            compositeSubset.append(composites)
+
+    regular_info = {}
+    prime_info = {}
+    composite_info = {}
+
+
+    #regular
+    recon, mses, psnrs, ssims = reconstruct(subsetsAngles, lena, mask, p, addNoise, iterations)
+    rmse_all.append(np.sqrt(mses))
+    ssim_all.append(ssims)
+    psnr_all.append(psnrs)
+    regular_info = {"angles":subsetsAngles, "RMSE":np.sqrt(mses), "SSIMS":ssims, "PSNR":psnrs, "label":"regular"}
+
+    #prime
+    recon, mses, psnrs, ssims = reconstruct(primeSubset, lena, mask, p, addNoise, iterations)
+    rmse_all.append(np.sqrt(mses))
+    ssim_all.append(ssims)
+    psnr_all.append(psnrs)
+    prime_info = {"angles": primeSubset, "RMSE":np.sqrt(mses), "SSIMS":ssims, "PSNR":psnrs, "label":"prime"}
+    
+
+    pairs = []
+    for n in range(len(compositesFlat) // 2):
+        prime_plus = list(primeSubset)
+
+        angles = compositesFlat[2 * n:2 * n + 2]
+        angle_set_id = EUCLID_NORM(angles[0])
+        prime_plus.append(angles)
+        pairs.append(angles)
+
+        recon, mses, psnrs, ssims = reconstruct(prime_plus, lena, mask, p, addNoise, iterations)
+        composite_info[angle_set_id] = {"anglePair":angles, "RMSE":np.sqrt(mses), "SSIMS":ssims, "PSNR":psnrs}
+
+
+    #plot everything 
+    iteration_axis = list(range(0, iterations, plotIncrement))
+        
+    #plot regular and prime recon info
+    for info in [regular_info, prime_info]: 
+        plt.subplot(131)
+        plt.plot(info["RMSE"], label=str(info["label"]))
+        plt.title("RMSE")
+          
+        plt.subplot(132)    
+        plt.plot(info["SSIMS"], label=str(info["label"]))
+        plt.title("SSIM")
+    
+        plt.subplot(133)
+        plt.plot(info["PSNR"], label=str(info["label"]))
+        plt.title("PSNR")
+    
+    #plot composite data
+    for id, info in composite_info.items():
+        plt.subplot(131)
+        plt.plot(info["RMSE"], label=str(info["anglePair"]))
+        plt.title("RMSE")
+          
+        plt.subplot(132)    
+        plt.plot(info["SSIMS"], label=str(info["anglePair"]))
+        plt.title("SSIM")
+    
+        plt.subplot(133)
+        plt.plot(info["PSNR"], label=str(info["anglePair"]))
+        plt.title("PSNR")
+        plt.legend()
+
+    plt.show()
+
+    path = "results/auto_recon_4b/recon_dicts_" + str(iterations) + ".npz"
+    np.savez(path, regularInfo=regular_info, primeInfo=prime_info, compositeInfo=composite_info, compositePairs=pairs, allow_pickle=True)
+    plt.show()
+        
+
+def sort_composites(angle_ids, current_primes=[]): 
+    """
+    returns a dictionary of angle_ids (which have corresponding copmoniste 
+    angle pair) grouped by distance to closest prime
+    """
+    sortedVectors = {}
+    for angle_id in angle_ids: 
+        dist = distance_to_prime(angle_id, current_primes)
+        if dist in sortedVectors:
+            if angle_id not in sortedVectors[dist]:
+                sortedVectors[dist].append(angle_id)
+        else: 
+            sortedVectors[dist] = [angle_id]
+
+    for dist, values in sortedVectors.items(): 
+        sortedVectors[dist] = sorted(values)#, key=EUCLID_NORM)
+
+    return sortedVectors
+
+def post_recon_4b(prime_duplicates=False): 
+    #get recon data
+    data = np.load("results/auto_recon_4b/recon_dicts_10.npz")
+    composite_info = data["compositeInfo"].item()
+    regular_info = data["regularInfo"].item()
+    prime_info = data["primeInfo"].item()
+
+    #order the composite reconstructions based on the composite pair
+    if not prime_duplicates: 
+        prime_norms = [EUCLID_NORM(angle) for angles in prime_info["angles"] for angle in angles]
+        print(prime_norms)
+        distance_ordering = sort_composites(composite_info.keys(), prime_norms)
+    else:
+        distance_ordering = sort_composites(composite_info.keys())
+    print(distance_ordering)
+    
+    
+    #plot error info for each set of composite pairs with the same distance to prime
+    for dist in distance_ordering.keys():
+        fig, (ax_rmse, ax_ssim, ax_psnr) = plt.subplots(1, 3)
+        fig.suptitle("distance = " + str(dist))
+
+        #plot regular and prime recon info
+        for info in [regular_info, prime_info]: 
+            ax_rmse.plot(info["RMSE"], label=str(info["label"]))
+            ax_rmse.set_title("RMSE")
+            
+            ax_ssim.plot(info["SSIMS"], label=str(info["label"]))
+            ax_ssim.set_title("SSIM")
+        
+            ax_psnr.plot(info["PSNR"], label=str(info["label"]))
+            ax_psnr.set_title("PSNR")   
+
+        #plot composite reconstructions 
+        for angle_id in distance_ordering[dist]: 
+            info = composite_info[angle_id]
+
+            ax_rmse.plot(info["RMSE"], label=str(info["anglePair"]))
+            
+            ax_ssim.plot(info["SSIMS"], label=str(info["anglePair"]))
+        
+            ax_psnr.plot(info["PSNR"], label=str(info["anglePair"]))
+            ax_psnr.legend()
+
+    plt.show()
+   
+
+    # if ignoreDuplicatePrimes:
+    #     current_primes = [EUCLID_NORM(angle) for angle in primeFlat]
+    # else: 
+    #     current_primes = []
+    # sortedComposites = sort_composites(compositesFlat, current_primes) 
+
+def plot_vectors(angles, line): 
+    for angle in angles: 
+        imag, real = farey.get_pq(angle)
+        plt.plot([0, real], [0, imag], line)
+
+
+
+angles, subsetsAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,N,N,1,True,K, prime_only=False, max_angles=25)
+perpAngle = farey.farey(1,0)
+angles.append(perpAngle)
+subsetsAngles[0].append(perpAngle)
+
+
+#split angles in prime and composites 
+primeFlat = []
+primeSubset = []
+compositesFlat = []
+compositeSubset = []
+for angles in subsetsAngles:
+    primes = []
+    composites = []
+    for angle in angles:
+        if farey.is_gauss_prime(angle) or abs(angle) == 1: 
+            primes.append(angle)
+            primeFlat.append(angle)
+        else: 
+            composites.append(angle)
+            compositesFlat.append(angle)
+    if primes != []:
+        primeSubset.append(primes)
+    if composites != []:
+        compositeSubset.append(composites)
+    
+
+print(post_recon_4b(False))
+
+
+
 
 """
 for j, prime in enumerate(primes): 

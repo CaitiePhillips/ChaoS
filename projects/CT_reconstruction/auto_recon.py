@@ -62,44 +62,6 @@ fftpack.ifft = pyfftw.interfaces.scipy_fftpack.ifft
 # Turn on the cache for optimum performance
 pyfftw.interfaces.cache.enable()
 
-# helper functions -------------------------------------------------------------
-def compute_slopes(subsetsAngles, twoQuads , p): 
-        """
-        Compute gradients of given angles. 
-
-        subsetsAngles (ndarray(dtype=float, ndim=?)): array of angles
-        twoQuads (bool): one or two quadrants 
-        """
-        subsetsMValues = []
-        for angles in subsetsAngles:
-            mValues = []
-            for angle in angles:
-                m, inv = farey.toFinite(angle, p)
-                mValues.append(m)
-                #second quadrant
-                if twoQuads:
-                    if m != 0 and m != p: #dont repeat these
-                        m = p-m
-                        mValues.append(m)
-            subsetsMValues.append(mValues)
-        return subsetsMValues
-
-def fill_dft(rt, subsetsMValues, powSpectLena): 
-    """
-    fill 2D FT space with projections via FST
-
-    subsetsMValues (ndarray(dtype:float, dim:?)): array of prjoection angle gradients
-    powSpectLena (ndarray(dtype:float, dim:?)): empty 2D FT Space to be filled
-    """
-    mValues = [m for mSet in subsetsMValues for m in mSet] 
-    for m in mValues: 
-        slice = fftpack.fft(rt[m])
-        radon.setSlice(m, powSpectLena, slice)
-
-    powSpectLena = fftpack.fftshift(powSpectLena)
-    # powSpectLena = np.abs(powSpectLena)
-
-    powSpectLena = powSpectLena + np.flipud(powSpectLena) # conj symmetric
 
 def osem_expand(iterations, p, g_j, os_mValues, projector, backprojector,
                          image, mask, epsilon=1e3, dtype=np.int32):
@@ -202,10 +164,15 @@ n = 256
 k = parameters[1]
 M = int(k*n)
 N = n 
-K = parameters[0]
-s = parameters[3]
-iterations = parameters[2]
+QUADS = 2
+
+
+#OSEM params
+s = 12
 subsetsMode = 1
+K = parameters[0]
+
+iterations = parameters[2]
 SNR = 30
 floatType = np.float
 twoQuads = True
@@ -221,117 +188,225 @@ relaxIterationFactor = int(0.01*iterations)
 smoothMaxIteration2 = iterations-relaxIterationFactor*smoothIncrement
 print("N:", N, "M:", M, "s:", s, "i:", iterations)
 
-pDash = nt.nearestPrime(N)
-print("p':", pDash)
-angles, subsetsAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,N,N,2,True,K, max_angles=20, prime_only=True)
-print("Number of Angles:", len(angles))
-print("angles:", angles)
-ct_angles = angles
+INF_NORM = lambda x: max(x.real, x.imag)
+def elNorm(l): 
+    return lambda x: int(x.real**l+x.imag**l)
+EUCLID_NORM = elNorm(2)
 
-p = nt.nearestPrime(M)
-print("p:", p)
+def recon_CT(p, angles, subsetAngles, iterations): 
+    lena, mask = imageio.phantom(N, p, True, np.uint32, True)
 
-#check if Katz compliant
-if not mojette.isKatzCriterion(N, N, angles):
-    print("Warning: Katz Criterion not met")
+    #compute m subsets
+    subsetsMValues = []
+    for subset in subsetAngles:
+        mValues = []
+        for angle in subset:
+            m, inv = farey.toFinite(angle, p)
+            mValues.append(m)
+        subsetsMValues.append(mValues)
 
-#create test image
-lena, mask = imageio.phantom(N, p, True, np.uint32, True)
+    mt_lena = mojette.transform(lena, angles)
+    rt_lena = mojette.toDRT(mt_lena, angles, p, p, p) 
+    
+    recon, mses, psnrs, ssims = osem_expand(iterations, p, rt_lena, subsetsMValues, finite.frt, finite.ifrt, lena, mask)
+    recon = np.abs(recon)
 
-#compute m subsets
-subsetsMValues = []
-for angles in subsetsAngles:
-    mValues = []
-    for angle in angles:
-        m, inv = farey.toFinite(angle, p)
-        mValues.append(m)
-    subsetsMValues.append(mValues)
-# print(subsetsMValues)
-
-#CT
-mt_lena = mojette.transform(lena, ct_angles)
-rt_lena = mojette.toDRT(mt_lena, ct_angles, p, p, p) 
-
-recon, mses, psnrs, ssims = osem_expand(iterations, p, rt_lena, subsetsMValues, finite.frt, finite.ifrt, lena, mask)
-recon = np.abs(recon)
-
-mse = imageio.immse(imageio.immask(lena, mask, N, N), imageio.immask(recon, mask, N, N))
-ssim = imageio.imssim(imageio.immask(lena, mask, N, N).astype(float), imageio.immask(recon, mask, N, N).astype(float))
-psnr = imageio.impsnr(imageio.immask(lena, mask, N, N), imageio.immask(recon, mask, N, N))
-print("RMSE:", math.sqrt(mse))
-print("SSIM:", ssim)
-print("PSNR:", psnr)
+    return recon, np.sqrt(mses), psnrs, ssims
 
 
-reconLena = finite.ifrt(rt_lena, p)
-diff = lena - recon
-mseValues = np.array(mses)
-psnrValues = np.array(psnrs)
-ssimValues = np.array(ssims)
-
-if plotCroppedImages:
-    print(lena.shape)
-    print(mask.shape)
-    lena = imageio.immask(lena, mask, N, N)
-    reconLena = imageio.immask(reconLena, mask, N, N)
-    # reconNoise = imageio.immask(reconNoise, mask, N, N)
-    recon = imageio.immask(recon, mask, N, N)
-    diff = imageio.immask(diff, mask, N, N)
-
-fig, ax = plt.subplots(figsize=(24, 9))
-plt.subplot(121)
-rax = plt.imshow(reconLena, interpolation='nearest', cmap='gray')
-rcbar = plt.colorbar(rax, cmap='gray', orientation="horizontal")
-plt.title('Inverse DRT')
-plt.subplot(122)
-rax2 = plt.imshow(recon, interpolation='nearest', cmap='gray')
-rcbar2 = plt.colorbar(rax2, cmap='gray', orientation="horizontal")
-plt.title('Reconstruction')
+def get_composites(subsetAngles):
+    subsetComposites = []
+    composites = []
+    for subset in subsetAngles:
+        compositeSubset = []
+        for angle in subset:
+            if not farey.is_gauss_prime(angle):
+                compositeSubset.append(angle)
+                composites.append(angle)
+        subsetComposites.append(compositeSubset)
+    
+    return composites, subsetComposites
 
 
-fig, ax = plt.subplots(figsize=(24, 9))
-plt.subplot(221)
-rax = plt.imshow(lena, interpolation='nearest', cmap='gray')
-rcbar = plt.colorbar(rax, cmap='gray')
-plt.title('Original Image')
-plt.subplot(222)
-rax = plt.imshow(reconLena, interpolation='nearest', cmap='gray')
-rcbar = plt.colorbar(rax, cmap='gray')
-plt.title('Inverse DRT')
-plt.subplot(223)
-rax2 = plt.imshow(recon, interpolation='nearest', cmap='gray')
-rcbar2 = plt.colorbar(rax2, cmap='gray')
-plt.title('Reconstruction')
-plt.subplot(224)
-rax3 = plt.imshow(diff, interpolation='nearest', cmap='gray')
-rcbar3 = plt.colorbar(rax3, cmap='gray')
-plt.title('Reconstruction Errors')
-# plt.subplot(153)
-# rax = plt.imshow(reconLena - lena, interpolation='nearest', cmap='gray')
-# rcbar = plt.colorbar(rax, cmap='gray')
-# plt.title('Noise')
+def auto_recon_0(p, num_angles, iterations): 
+    """
+    Creates baseline regular and prime reconstructions to compare future experiment results to.
 
-fig, ax = plt.subplots(figsize=(24, 9))
+    Paramaters:
+        p: size of image and fractal
+        num_angles: number of angles in one quadrant 
+        iterations: number of osem iterations 
+    """
+    p = nt.nearestPrime(N)
+
+    to_plot = {}
+
+    #gauss int recon
+    angles, subsetAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,p,p,QUADS,True,K, max_angles=num_angles)    
+    recon, rmses, psnrs, ssims = recon_CT(p, angles, subsetAngles, iterations)
+    to_plot["gaussian integer recon"] = {"rmses":rmses, "psnrs":psnrs, "ssims":ssims}
+    path = "CT_results/exp_0/regular_recon_angles_"+ str(angles) + "_its_" + str(iterations) + ".npz"
+    np.savez(path, prime=False, angles=angles, recon=recon, rmses=rmses, ssims=ssims, psnrs=psnrs)
+      
+    #gauss prime recon
+    primes, subsetPrimes, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,p,p,QUADS,True,K, max_angles=num_angles, prime_only=True)    
+    recon, rmses, psnrs, ssims = recon_CT(p, primes, subsetPrimes, iterations)
+    to_plot["gaussian prime recon"] = {"rmses":rmses, "psnrs":psnrs, "ssims":ssims}
+    path = "CT_results/exp_0/prime_recon_angles_"+ str(angles) + "_its_" + str(iterations) + ".npz"
+    np.savez(path, prime=True, angles=primes, recon=recon, rmses=rmses, ssims=ssims, psnrs=psnrs)
+
+    #composite recon
+    composites, subsetComposites = get_composites(subsetAngles)
+    recon, rmses, psnrs, ssims = recon_CT(p, composites, subsetComposites, iterations)
+    to_plot["gaussian int w/o primes recon "] = {"rmses":rmses, "psnrs":psnrs, "ssims":ssims}
+    path = "CT_results/exp_0/composite_recon_angles_"+ str(angles) + "_its_" + str(iterations) + ".npz"
+    np.savez(path, prime=True, angles=composites, recon=recon, rmses=rmses, ssims=ssims, psnrs=psnrs)
+
+    plot_recons(to_plot)
 
 
-incX = np.arange(0, len(mses))*plotIncrement
+def plot_recon_0(): 
+    fig, (ax_rmse, ax_ssims, ax_psnr) = plt.subplots(1, 3)
+    labels = ["gaussian integer recon", "gaussian prime recon", "gaussian integer w/o prime recnon"]
+    paths = ["CT_results/exp_0/regular_recon_angles_1000_its_1000.npz", 
+            "CT_results/exp_0/prime_recon_angles_1000_its_1000.npz", 
+            "CT_results/exp_0/composite_recon_angles_1000_its_1000.npz"]
+    for i, path in enumerate(paths): 
+        data = np.load(path)
+        ax_rmse.plot(data["rmses"])
+        ax_ssims.plot(data["ssims"])
+        ax_psnr.plot(data["psnrs"], label=labels[i])
+        ax_psnr.legend()
+    plt.show()
+    
 
-plt.subplot(131)
-plt.plot(incX, np.sqrt(mseValues))
-plt.title('Error Convergence of the Finite OSEM')
-plt.xlabel('Iterations')
-plt.ylabel('RMSE')
-plt.subplot(132)
-plt.plot(incX, psnrValues)
-plt.ylim(0, 45.0)
-plt.title('PSNR Convergence of the Finite OSSEM')
-plt.xlabel('Iterations')
-plt.ylabel('PSNR')
-plt.subplot(133)
-plt.plot(incX, ssimValues)
-plt.ylim(0, 1.0)
-plt.title('Simarlity Convergence of the Finite OSSEM')
-plt.xlabel('Iterations')
-plt.ylabel('SSIM')
+def plot_recons(recon_info): 
+    fig, (ax_rmse, ax_ssims, ax_psnr) = plt.subplots(1, 3)
+    for label, error_info in recon_info.items(): 
+        ax_rmse.plot(error_info["rmses"])
+        ax_ssims.plot(error_info["ssims"])
+        ax_psnr.plot(error_info["psnrs"], label=label)
+        ax_psnr.legend()
 
-plt.show()
+    plt.show()
+
+
+def get_subset_index(angle, subsetAngles): 
+    """Find subset index of the given angle. 
+
+    Args:
+        angle (complex): angle to identify index of
+        subsetAngles (list[list[complex]]): list of angles to sort through
+
+    Returns:
+        _type_: _description_
+    """
+    for i, subset in enumerate(subsetAngles): 
+        if angle in subset: 
+            return i
+
+
+def auto_recon_1(p, num_angles, iterations):
+    """
+    complete reconstruction for 
+        angles = prime angles + (a, b) + (-a, b) + (b, a) + (-b, a)
+    for each set of (a, b)s in the composite list. 
+
+
+    Args:
+        p (int): size of reconstruction and fractal
+        num_angles (int): number of angles to use in reconstruction
+        iterations (int): number of osem iterations
+    """
+    to_plot = {}
+
+    angles, subsetAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,p,p,QUADS,True,K, max_angles=num_angles)    
+    primes, subsetPrimes, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,p,p,QUADS,True,K, max_angles=num_angles, prime_only=True)    
+    composites, subsetComposites = get_composites(subsetAngles)
+    composites = sorted(composites, key=EUCLID_NORM)
+
+    step = 4
+    for i in range(0, len(composites), step): 
+        #add angles to prime subset
+        subsetAngles = list(subsetPrimes)
+        angles = list(primes)
+        for angle in composites[i:i+step]:
+            idx = get_subset_index(angle, subsetComposites)
+            subsetAngles[idx].append(angle)
+            angles.append(angle)
+        #recon with new angle set & save
+        recon, rmses, psnrs, ssims = recon_CT(p, angles, subsetAngles, iterations)
+        to_plot[str(composites[i:i+step])] = {"composites":composites[i:i+step], "recon":recon, "rmses":rmses, "psnrs":psnrs, "ssims":ssims}
+    
+    path = "CT_results/exp_1/prime_comp_recons_angles_"+ str(num_angles) + "_its_" + str(iterations) + ".npz"
+    np.savez(path, primes=primes, plotInfo=to_plot)
+    # plot_recons(to_plot)
+
+
+def auto_recon_2(p, num_angles, iterations):
+    """
+    complete reconstruction for 
+        angles = prime angles + (a, b) + (-a, b) (almost same as auto_recon_1)
+    for each set of (a, b)s in the composite list. 
+
+
+    Args:
+        p (int): size of reconstruction and fractal
+        num_angles (int): number of angles to use in reconstruction
+        iterations (int): number of osem iterations
+    """
+    to_plot = {}
+
+    angles, subsetAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,p,p,QUADS,True,K, max_angles=num_angles)    
+    primes, subsetPrimes, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,p,p,QUADS,True,K, max_angles=num_angles, prime_only=True)    
+    composites, subsetComposites = get_composites(subsetAngles)
+    composites = sorted(composites, key=EUCLID_NORM)
+
+    step = 2
+    for i in range(0, len(composites), step): 
+        #add angles to prime subset
+        subsetAngles = list(subsetPrimes)
+        angles = list(primes)
+        for angle in composites[i:i+step]:
+            idx = get_subset_index(angle, subsetComposites)
+            subsetAngles[idx].append(angle)
+            angles.append(angle)
+        #recon with new angle set & save
+        recon, rmses, psnrs, ssims = recon_CT(p, angles, subsetAngles, iterations)
+        to_plot[str(composites[i:i+step])] = {"composites":composites[i:i+step], "recon":recon, "rmses":rmses, "psnrs":psnrs, "ssims":ssims}
+    
+    path = "CT_results/exp_2/prime_comp_recons_angles_"+ str(num_angles) + "_its_" + str(iterations) + ".npz"
+    np.savez(path, primes=primes, plotInfo=to_plot)
+    # plot_recons(to_plot)
+   
+
+def temp_for_now(p, num_angles): 
+    angles, subsetAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,p,p,QUADS,True,K, max_angles=num_angles)    
+    primes, subsetPrimes, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,p,p,QUADS,True,K, max_angles=num_angles, prime_only=True)    
+    composites, subsetComposites = get_composites(subsetAngles)
+
+    distances = {}
+    for angle in composites: 
+        min_dist = round(np.abs(np.angle(angle, deg=1) - np.angle(primes[0], deg=1)), 3)
+
+        for prime in primes: 
+            dist = np.abs(np.angle(angle, deg=1) - np.angle(prime, deg=1))
+            dist = round(dist, 3)
+            if dist < min_dist: 
+                min_dist = dist
+
+        if dist in distances.keys(): 
+            distances[dist].append(angle)
+        else:
+            distances[dist] = [angle]
+
+    print(distances)
+
+
+
+
+if __name__ == "__main__": 
+    p = nt.nearestPrime(N)
+    # temp_for_now(p, 20)
+    auto_recon_2(p, 20, 2)
+# %%

@@ -95,9 +95,44 @@ pDash = nt.nearestPrime(N)
 print("p':", pDash)
 
 INF_NORM = lambda x: max(x.real, x.imag)
-EUCLID_NORM = lambda x: int(x.real**2+x.imag**2)
 def elNorm(l): 
-    return lambda x: x.real**l+x.imag**l
+    return lambda x: int(x.real**l+x.imag**l)
+EUCLID_NORM = elNorm(2)
+
+def split_angles(subsetsAngles, subsets): 
+    #split angles in prime and composites 
+    primeFlat = []
+    primeSubset = []
+    compositesFlat = []
+    compositeSubset = []
+
+    for angles in subsetsAngles:
+        primes = []
+        composites = []
+        for angle in angles:
+            if farey.is_gauss_prime(angle) or abs(angle) == 1: 
+                primes.append(angle)
+                primeFlat.append(angle)
+            else: 
+                composites.append(angle)
+                compositesFlat.append(angle)
+        if primes != []:
+            primeSubset.append(primes)
+        if composites != []:
+            compositeSubset.append(composites)
+
+    if subsets: 
+        return primeSubset, compositeSubset
+    else: 
+        return primeFlat, compositesFlat
+
+def get_primes(subsetsAngles, subsets):
+    primes, _ = split_angles(subsetsAngles, subsets)
+    return primes
+
+def get_composites(angles, subsets):
+    _, comps = split_angles(angles, subsets)
+    return comps
 
 def osem_expand_complex(iterations, p, g_j, os_mValues, projector, backprojector, image, mask, epsilon=1e3, dtype=np.int32):
     '''
@@ -435,13 +470,6 @@ def nearestPrime(n, current_primes):
         p_above += 2
         p_below -= 2
         count += 1
-        
-
-test_angles = [15, 25, 50, 75, 100]
-primes = [0, 1]
-rmse_all = [[], []]
-ssim_all = [[], []]
-psnr_all = [[], []]
 
 def distance_to_prime(dist, current_primes=[]): 
         n = int(dist)
@@ -613,14 +641,16 @@ def auto_recon_4b(numAngles, iterations):
         prime_plus = list(primeSubset)
 
         angles = compositesFlat[2 * n:2 * n + 2]
-        angle_set_id = EUCLID_NORM(angles[0])
+        angle_set_id = get_angle_id(angles[0]) #EUCLID_NORM(angles[0])
+        print(angle_set_id, angles[0])
+
         prime_plus.append(angles)
         pairs.append(angles)
 
         recon, mses, psnrs, ssims = reconstruct(prime_plus, lena, mask, p, addNoise, iterations)
         composite_info[angle_set_id] = {"anglePair":angles, "RMSE":np.sqrt(mses), "SSIMS":ssims, "PSNR":psnrs}
-
-
+        
+    print(composite_info.keys())
     #plot everything 
     iteration_axis = list(range(0, iterations, plotIncrement))
         
@@ -653,21 +683,38 @@ def auto_recon_4b(numAngles, iterations):
         plt.title("PSNR")
         plt.legend()
 
+    path = "results/auto_recon_4b/recon_dicts_angles_"+ str(iterations) + "_" + str(iterations) + ".npz"
+    np.savez(path, regularInfo=regular_info, primeInfo=prime_info, compositeInfo=composite_info, compositePairs=pairs)#, allow_pickle=True)
+      
     plt.show()
 
-    path = "results/auto_recon_4b/recon_dicts_" + str(iterations) + ".npz"
-    np.savez(path, regularInfo=regular_info, primeInfo=prime_info, compositeInfo=composite_info, compositePairs=pairs, allow_pickle=True)
-    plt.show()
+    # path = "results/auto_recon_4b/recon_dicts_" + str(iterations) + ".npz"
+    # np.savez(path, regularInfo=regular_info, primeInfo=prime_info, compositeInfo=composite_info, compositePairs=pairs)#, allow_pickle=True)
         
+def get_angle_id(angle): 
+    return int(angle.real + 100 * angle.imag)
 
-def sort_composites(angle_ids, current_primes=[]): 
+def angle_id_to_angle(angle_id):
+    return farey.farey(angle_id // 10, angle_id % 10)
+
+def sort_composites_distance(angles, current_primes=[]): 
     """
     returns a dictionary of angle_ids (which have corresponding copmoniste 
     angle pair) grouped by distance to closest prime
+
+    abs_vals (list[ints]): list of absolute value of angles to be sorted, this 
+    will be equivalent to the angle_id if composite_info dictionary is used. 
+
+    current_primes (list[ints]): list of unallowed absolute values. these are 
+    unallowed as there exists Gaussain primes already used with these absolute 
+    values
+
     """
     sortedVectors = {}
-    for angle_id in angle_ids: 
-        dist = distance_to_prime(angle_id, current_primes)
+    for angle in angles: 
+        norm = EUCLID_NORM(angle)
+        angle_id = get_angle_id(angle)
+        dist = distance_to_prime(norm, current_primes)
         if dist in sortedVectors:
             if angle_id not in sortedVectors[dist]:
                 sortedVectors[dist].append(angle_id)
@@ -675,26 +722,50 @@ def sort_composites(angle_ids, current_primes=[]):
             sortedVectors[dist] = [angle_id]
 
     for dist, values in sortedVectors.items(): 
-        sortedVectors[dist] = sorted(values)#, key=EUCLID_NORM)
+        sortedVectors[dist] = sorted(values, key = lambda x: EUCLID_NORM(angle_id_to_angle(x)))#, key=EUCLID_NORM)
 
     return sortedVectors
 
-def post_recon_4b(prime_duplicates=False): 
+def post_recon_4b(prime_duplicates=True): 
+    """
+    Plots reconstruction data created by auto_recon_4b. The angles used in 
+    in auto_recon_4b will be grouped by distance from the angles magnitude to 
+    the closest prime number. Each group will have it's own plot, made of three
+    subplots; RMSE, SSIM, PSNR> 
+
+    prime_duplicates (bool): Where False, the closest prime to the angle's 
+    magnitude may not be the same magnitude as on of the prime angles. Where True, 
+    any prime is acceptable.  
+    """
     #get recon data
-    data = np.load("results/auto_recon_4b/recon_dicts_10.npz")
+    data = np.load("results/auto_recon_4b/recon_dicts_angles_200_200.npz")
     composite_info = data["compositeInfo"].item()
     regular_info = data["regularInfo"].item()
     prime_info = data["primeInfo"].item()
+    comp_pairs = data["compositePairs"]
+    comp_pair_reprs = [angles[0] for angles in comp_pairs]
 
     #order the composite reconstructions based on the composite pair
     if not prime_duplicates: 
         prime_norms = [EUCLID_NORM(angle) for angles in prime_info["angles"] for angle in angles]
-        print(prime_norms)
-        distance_ordering = sort_composites(composite_info.keys(), prime_norms)
+        distance_ordering = sort_composites_distance(comp_pair_reprs, prime_norms)
     else:
-        distance_ordering = sort_composites(composite_info.keys())
+        distance_ordering = sort_composites_distance(comp_pair_reprs)
     print(distance_ordering)
     
+    # fig, (ax_rmse, ax_ssim, ax_psnr) = plt.subplots(1, 3)
+    # fig.suptitle("distance = " + str(dist))
+
+    # #plot regular and prime recon info
+    # for info in [regular_info, prime_info]: 
+    #     ax_rmse.plot(info["RMSE"], label=str(info["label"]))
+    #     ax_rmse.set_title("RMSE")
+        
+    #     ax_ssim.plot(info["SSIMS"], label=str(info["label"]))
+    #     ax_ssim.set_title("SSIM")
+    
+    #     ax_psnr.plot(info["PSNR"], label=str(info["label"]))
+    #     ax_psnr.set_title("PSNR")  
     
     #plot error info for each set of composite pairs with the same distance to prime
     for dist in distance_ordering.keys():
@@ -733,136 +804,300 @@ def post_recon_4b(prime_duplicates=False):
     # sortedComposites = sort_composites(compositesFlat, current_primes) 
 
 def plot_vectors(angles, line): 
+    """
+    plot from origin to vector/angle, like the sunbeam
+    
+    angles (list[complex]): angles to plot
+    line (str): colour and line type to plot 
+    """
     for angle in angles: 
         imag, real = farey.get_pq(angle)
         plt.plot([0, real], [0, imag], line)
 
+def gcd_complex(n, m): 
+    r_prev, r_n = m, n
+    if abs(n) > abs(m): 
+        r_prev, r_n = n, m
 
+    while True: 
+        gcd = r_n
 
-angles, subsetsAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,N,N,1,True,K, prime_only=False, max_angles=25)
-perpAngle = farey.farey(1,0)
-angles.append(perpAngle)
-subsetsAngles[0].append(perpAngle)
+        q_n = r_prev / r_n
+        q_n = farey.farey(round(q_n.imag), round(q_n.real))
+        r_n = r_prev - q_n * r_n
+        r_n = farey.farey(r_n.imag, r_n.real)
 
+        if abs(r_n) == 0:
+            return gcd
+        
+def get_gaussian_prime_factors(angle): 
+    """
+    this works good enough
 
-#split angles in prime and composites 
-primeFlat = []
-primeSubset = []
-compositesFlat = []
-compositeSubset = []
-for angles in subsetsAngles:
-    primes = []
-    composites = []
-    for angle in angles:
-        if farey.is_gauss_prime(angle) or abs(angle) == 1: 
-            primes.append(angle)
-            primeFlat.append(angle)
-        else: 
-            composites.append(angle)
-            compositesFlat.append(angle)
-    if primes != []:
-        primeSubset.append(primes)
-    if composites != []:
-        compositeSubset.append(composites)
+    remember that gaussian prime factorisation is unique apart from unit multiples
     
+    https://stackoverflow.com/questions/2269810/whats-a-nice-method-to-factor-gaussian-integers#:~:text=In%20the%20Gaussian%20integers%2C%20if,2%20...%20pn.
+    """
+    p, q = farey.get_pq(angle)
+    norm = p**2 + q**2
+    primes = nt.factors(norm)
 
-print(post_recon_4b(False))
+    factors = []
+    for i, prime in enumerate(primes): 
+        if prime == 2: 
+            factor = farey.farey(1, 1)
 
+        elif prime % 4 == 3: # only when q = 0, p !=0 or opposite
+            factor = prime
+            primes.pop(primes.index(prime, i+1)) #prime will be in factors twice, do not process twice. 
 
+        else: # prime = 1 mod 4
+            k = 0
+            while k < 100: 
+                if k ** 2 % prime == prime - 1:
+                    break
+                k += 1
 
+            factor = gcd_complex(prime, farey.farey(1, k))
+            # check if correct prime or require conjugate
+            p, q = (angle / factor).imag, (angle / factor).real
+            if not(p % 1 == 0 and q % 1 == 0):
+                factor = factor.conjugate()
+        factors.append(factor)
+    
+    return factors
 
-"""
-for j, prime in enumerate(primes): 
-    for k, max_angles in enumerate(test_angles):
-        angles, subsetsAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,N,N,1,True,K, prime_only=prime, max_angles=max_angles)
-        #angles, subsetsAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,M,M,1,True,K)
-        perpAngle = farey.farey(1,0)
-        angles.append(perpAngle)
-        subsetsAngles[0].append(perpAngle)
+def sort_composites_factors(composites): 
+    """
+    returns a dictionary of angle_ids (which have corresponding copmoniste 
+    angle pair) grouped by size of prime factorisation 
 
-        p = nt.nearestPrime(M)
+    composites (list[ints]): list of composite angles to factor
 
-        #create test image
-        lena, mask = imageio.phantom(N, p, True, np.uint32, True)
-
-        #-------------------------------
-        #k-space
-        #2D FFT
-        fftLena = fftpack.fft2(lena) #the '2' is important
-        fftLenaShifted = fftpack.fftshift(fftLena)
-        #power spectrum
-        powSpectLena = np.abs(fftLenaShifted)
-
-        #add noise to kSpace
-        noise = finite.noise(fftLenaShifted, SNR)
-        if addNoise:
-            fftLenaShifted += noise
-
-        #Recover full image with noise
-        reconLena = fftpack.ifft2(fftLenaShifted) #the '2' is important
-        reconLena = np.abs(reconLena)
-        reconNoise = lena - reconLena
-
-        mse = imageio.immse(lena, np.abs(reconLena))
-        ssim = imageio.imssim(lena.astype(float), np.abs(reconLena).astype(float))
-        psnr = imageio.impsnr(lena, np.abs(reconLena))
-
-        #compute lines
-        centered = True
-        subsetsLines = []
-        subsetsMValues = []
-        mu = 0
-        for angles in subsetsAngles:
-            lines = []
-            mValues = []
-            for angle in angles:
-                m, inv = farey.toFinite(angle, p)
-                u, v = radon.getSliceCoordinates2(m, powSpectLena, centered, p)
-                lines.append((u,v))
-                mValues.append(m)
-                #second quadrant
-                if twoQuads:
-                    if m != 0 and m != p: #dont repeat these
-                        m = p-m
-                        u, v = radon.getSliceCoordinates2(m, powSpectLena, centered, p)
-                        lines.append((u,v))
-                        mValues.append(m)
-            subsetsLines.append(lines)
-            subsetsMValues.append(mValues)
-            mu += len(lines)
-
-        #samples used
-        sampleNumber = (p-1)*mu
-
-        #-------------
-        # Measure finite slice
-
-        drtSpace = np.zeros((p+1, p), floatType)
-        for lines, mValues in zip(subsetsLines, subsetsMValues):
-            for i, line in enumerate(lines):
-                u, v = line
-                sliceReal = ndimage.map_coordinates(np.real(fftLenaShifted), [u,v])
-                sliceImag = ndimage.map_coordinates(np.imag(fftLenaShifted), [u,v])
-                slice = sliceReal+1j*sliceImag
-                finiteProjection = fftpack.ifft(slice) # recover projection using slice theorem
-                drtSpace[mValues[i],:] = finiteProjection
-
+    """
+    sortedVectors = {}
+    for angle in composites: 
+        factors = get_gaussian_prime_factors(angle)
+        num = len(factors)
         
-        recon, mses, psnrs, ssims = osem_expand_complex(iterations, p, drtSpace, subsetsMValues, finite.frt_complex, finite.ifrt_complex, lena, mask)
-        rmse_all[prime].append(np.array(mses))
-        psnr_all[prime].append(np.array(psnrs))
-        ssim_all[prime].append(np.array(ssims))
+        angle_id = get_angle_id(angle)
+        if num in sortedVectors:
+            if angle_id not in sortedVectors[num]:
+                sortedVectors[num].append(angle_id)
+        else: 
+            sortedVectors[num] = [angle_id]
+
+    for num_factors, values in sortedVectors.items(): 
+        sortedVectors[num_factors] = sorted(values, key = lambda x: EUCLID_NORM(angle_id_to_angle(x)))#, key=EUCLID_NORM)
+
+    return sortedVectors
+
+def post_recon_4c(prime_duplicates=True): 
+    """
+    luyc
+    """
+    
+    #get recon data
+    data = np.load("results/auto_recon_4b/recon_dicts_200.npz")
+    composite_info = data["compositeInfo"].item()
+    comp_pairs = data["compositePairs"]
+    regular_info = data["regularInfo"].item()
+    prime_info = data["primeInfo"].item()
+
+
+    #each angle in the composite pair has the same factorisation bar a unit
+    #will sort based on the number of primes in factorisation, so only need one
+    #angle to look at
+    comp_pair_reprs = [angles[0] for angles in comp_pairs]
+    facotr_ordering = sort_composites_factors(comp_pair_reprs)
+
+    fig, (ax_rmse, ax_ssim, ax_psnr) = plt.subplots(1, 3)
+    #plot regular and prime recon info
+    for info in [regular_info, prime_info]: 
+        ax_rmse.plot(info["RMSE"], label=str(info["label"]))
+        ax_rmse.set_title("RMSE")
         
-        recon = np.abs(recon)
+        ax_ssim.plot(info["SSIMS"], label=str(info["label"]))
+        ax_ssim.set_title("SSIM")
+    
+        ax_psnr.plot(info["PSNR"], label=str(info["label"]))
+        ax_psnr.set_title("PSNR")   
 
-        mse = imageio.immse(imageio.immask(lena, mask, N, N), imageio.immask(recon, mask, N, N))
-        ssim = imageio.imssim(imageio.immask(lena, mask, N, N).astype(float), imageio.immask(recon, mask, N, N).astype(float))
-        psnr = imageio.impsnr(imageio.immask(lena, mask, N, N), imageio.immask(recon, mask, N, N))
-        print("\nmax angles", max_angles, "prime", bool(prime))
-        print("RMSE:", math.sqrt(mse))
-        print("SSIM:", ssim)
-        print("PSNR:", psnr)
-"""
+    #plot error info for each set of composite pairs with the same distance to prime
+    # for dist in [facotr_ordering.keys()]:
+    for dist in [facotr_ordering.keys()]:
+    
+        # fig, (ax_rmse, ax_ssim, ax_psnr) = plt.subplots(1, 3)
+        # fig.suptitle("distance = " + str(dist))
 
-# path = "results/errors/recon_its_" + str(iterations) + ".npz"
-# np.savez(path, angles=test_angles, iterations=iterations, rmse=rmse_all, psnr=psnr_all, ssim=ssim_all)
+        # #plot regular and prime recon info
+        # for info in [regular_info, prime_info]: 
+        #     ax_rmse.plot(info["RMSE"], label=str(info["label"]))
+        #     ax_rmse.set_title("RMSE")
+            
+        #     ax_ssim.plot(info["SSIMS"], label=str(info["label"]))
+        #     ax_ssim.set_title("SSIM")
+        
+        #     ax_psnr.plot(info["PSNR"], label=str(info["label"]))
+        #     ax_psnr.set_title("PSNR")   
+
+        #plot composite reconstructions 
+        # for angle_id in facotr_ordering[dist]: 
+        for angle_id in [18, 47]:
+            info = composite_info[angle_id]
+            ax_rmse.plot(info["RMSE"], label=str(info["anglePair"]))
+            
+            ax_ssim.plot(info["SSIMS"], label=str(info["anglePair"]))
+        
+            ax_psnr.plot(info["PSNR"], label=str(info["anglePair"]))
+            ax_psnr.legend()
+        
+
+    info = [[angle_info["anglePair"], angle_info["RMSE"][-1], angle_info["SSIMS"][-1]] for angle_info in composite_info.values()]
+    rmse_sort = sorted(info, key = lambda x: x[1])
+    ssims_sort = sorted(info, key = lambda x: x[2], reverse=True)
+    norms_sort = sorted(comp_pairs, key = lambda x: EUCLID_NORM(x[0]))
+
+    for i in range(len(rmse_sort)): 
+        print(rmse_sort[i][0], ssims_sort[i][0], norms_sort[i])
+
+    plt.show()
+
+def equiv_class(angle): 
+    p, q = farey.get_pq(angle)
+    return [farey.farey(p, q), farey.farey(-1*p, q), farey.farey(p, -1*q), farey.farey(-1*p, -1*q),
+              farey.farey(q, p), farey.farey(-1*q, p), farey.farey(q, -1*p), farey.farey(-1*q, -1*p)]
+
+def auto_recon_5(iterations): 
+    """
+    looks at angles with the same norm and the reconstruction of the angle sets + primes 
+    """
+    recon_info = {}
+    rmse_all = []
+    ssim_all = []
+    psnr_all = []
+    p = nt.nearestPrime(M)
+    lena, mask = imageio.phantom(N, p, True, np.uint32, True)
+
+    angles, subsetsAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,N,N,1,True,K, prime_only=False, max_angles=25)
+    perpAngle = farey.farey(1,0)
+    angles.append(perpAngle)
+    subsetsAngles[0].append(perpAngle)
+
+    prime_subset = get_primes(subsetsAngles, True)
+
+    angle_sets = [[farey.farey(7, 4), farey.farey(4, 7)], [farey.farey(8, 1), farey.farey(1, 8)], 
+                  [farey.farey(7, 4), farey.farey(4, 7), farey.farey(8, 1), farey.farey(1, 1)], 
+                  [farey.farey(9, 2), farey.farey(2, 9)], [farey.farey(7, 6), farey.farey(6, 7)], 
+                  [farey.farey(9, 2), farey.farey(2, 9), farey.farey(7, 6), farey.farey(6, 7)]]
+    
+    #regular prime recon 
+    recon, mses, psnrs, ssims = reconstruct(prime_subset, lena, mask, p, addNoise, iterations)
+    rmse_all.append(np.sqrt(mses))
+    ssim_all.append(ssims)
+    psnr_all.append(psnrs)
+    recon_info[0] = {"angles":prime_subset, "RMSE":np.sqrt(mses), "SSIMS":ssims, "PSNR":psnrs, "label":"prime"} 
+
+    for i, angle_set in enumerate(angle_sets): 
+        primes = list(prime_subset)
+        primes.append(angle_set)
+        recon, mses, psnrs, ssims = reconstruct(primes, lena, mask, p, addNoise, iterations)
+        recon_info[i + 1] = {"anglePair":angle_set, "RMSE":np.sqrt(mses), "SSIMS":ssims, "PSNR":psnrs, "label":str(angle_set)}
+
+    #plot
+    for id, info in recon_info.items():
+        plt.subplot(131)
+        plt.plot(info["RMSE"], label=str(info["label"]))
+        plt.title("RMSE")
+          
+        plt.subplot(132)    
+        plt.plot(info["SSIMS"], label=str(info["label"]))
+        plt.title("SSIM")
+    
+        plt.subplot(133)
+        plt.plot(info["PSNR"], label=str(info["label"]))
+        plt.title("PSNR")
+        plt.legend()
+    
+    path = "results/auto_recon_5/recon_same_norms" + str(iterations) + ".npz"
+    np.savez(path, reconInfo=recon_info)
+        
+    plt.show()
+
+def auto_recon_6(iterations): 
+    """
+    Runs two angle pairs with the same norm in addition to prime angles in comparison
+    to primes + one angle pair + some other angle pair with a different norm and 
+    the same with the other angle
+    """
+    recon_info = {}
+    rmse_all = []
+    ssim_all = []
+    psnr_all = []
+    p = nt.nearestPrime(M)
+    lena, mask = imageio.phantom(N, p, True, np.uint32, True)
+
+    angles, subsetsAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,N,N,1,True,K, prime_only=False, max_angles=25)
+    perpAngle = farey.farey(1,0)
+    angles.append(perpAngle)
+    subsetsAngles[0].append(perpAngle)
+
+    prime_subset = get_primes(subsetsAngles, True)
+
+    angle_sets = [[farey.farey(7, 4), farey.farey(4, 7), farey.farey(8, 1), farey.farey(1, 8)],
+                  [farey.farey(7, 3), farey.farey(3, 7), farey.farey(8, 1), farey.farey(1, 8)],
+                  [farey.farey(4, 3), farey.farey(3, 4), farey.farey(8, 1), farey.farey(1, 8)], 
+                  [farey.farey(7, 4), farey.farey(4, 7), farey.farey(4, 3), farey.farey(3, 4)], 
+                  [farey.farey(9, 2), farey.farey(2, 9), farey.farey(7, 6), farey.farey(6, 7)],
+                  [farey.farey(9, 1), farey.farey(1, 9), farey.farey(7, 6), farey.farey(6, 7)], 
+                  [farey.farey(4, 3), farey.farey(3, 4), farey.farey(7, 6), farey.farey(6, 7)],
+                  [farey.farey(9, 2), farey.farey(2, 9), farey.farey(4, 3), farey.farey(3, 4)]]
+    
+    recon, mses, psnrs, ssims = reconstruct(prime_subset, lena, mask, p, addNoise, iterations)
+    rmse_all.append(np.sqrt(mses))
+    ssim_all.append(ssims)
+    psnr_all.append(psnrs)
+    recon_info[0] = {"angles":prime_subset, "RMSE":np.sqrt(mses), "SSIMS":ssims, "PSNR":psnrs, "label":"prime"} 
+
+    for i, angle_set in enumerate(angle_sets): 
+        primes = list(prime_subset)
+        primes.append(angle_set)
+        print(primes)
+        recon, mses, psnrs, ssims = reconstruct(primes, lena, mask, p, addNoise, iterations)
+        recon_info[i + 1] = {"anglePair":angle_set, "RMSE":np.sqrt(mses), "SSIMS":ssims, "PSNR":psnrs, "label":str(angle_set)}
+
+    #plot
+    for id, info in recon_info.items():
+        plt.subplot(131)
+        plt.plot(info["RMSE"], label=str(info["label"]))
+        plt.title("RMSE")
+          
+        plt.subplot(132)    
+        plt.plot(info["SSIMS"], label=str(info["label"]))
+        plt.title("SSIM")
+    
+        plt.subplot(133)
+        plt.plot(info["PSNR"], label=str(info["label"]))
+        plt.title("PSNR")
+        plt.legend()
+    
+    path = "results/auto_recon_6/recon_same_norms_comp" + str(iterations) + ".npz"
+    np.savez(path, reconInfo=recon_info)
+        
+    plt.show()
+
+
+def composite_from_factors(factors): 
+    prods = []
+    for angle_1 in equiv_class(factors[0]):
+        for angle_2 in equiv_class(factors[1]): 
+            prod = angle_1 * angle_2
+            p, q = farey.get_pq(prod)
+            prod = farey.farey(abs(p), abs(q))
+            if prod not in prods: 
+                prods.append(prod)
+    print(prods)
+
+if __name__ == "__main__": 
+    post_recon_4b(True)
+    

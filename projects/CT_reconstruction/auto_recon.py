@@ -29,7 +29,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 """
-
+# %%
 from __future__ import print_function    # (at top of module)
 import _libpath #add custom libs
 import finitetransform.mojette as mojette
@@ -64,97 +64,6 @@ fftpack.ifft = pyfftw.interfaces.scipy_fftpack.ifft
 pyfftw.interfaces.cache.enable()
 
 
-def osem_expand(iterations, p, g_j, os_mValues, projector, backprojector,
-                         image, mask, epsilon=1e3, dtype=np.int32):
-    '''
-    # Gary's implementation
-    # From Lalush and Wernick;
-    # f^\hat <- (f^\hat / |\sum h|) * \sum h * (g_j / g)          ... (*)
-    # where g = \sum (h f^\hat)                                   ... (**)
-    #
-    # self.f is the current estimate f^\hat
-    # The following g from (**) is equivalent to g = \sum (h f^\hat)
-    '''
-    norm = False
-    center = False
-    fdtype = floatType
-    f = np.ones((p,p), fdtype)
-    
-    mses = []
-    psnrs = []
-    ssims = []
-    for i in range(0, iterations):
-        for j, mValues in enumerate(os_mValues):
-#            print("Subset:", j)
-            muFinite = len(mValues)
-            
-            g = projector(f, p, fdtype, mValues)
-        
-            # form parenthesised term (g_j / g) from (*)
-            r = np.copy(g_j)
-            for m in mValues:
-                for y in range(p):
-                    r[m,y] /= g[m,y]
-        
-            # backproject to form \sum h * (g_j / g)
-            g_r = backprojector(r, p, norm, center, 1, 0, mValues) / muFinite
-        
-            # Renormalise backprojected term / \sum h)
-            # Normalise the individual pixels in the reconstruction
-            f *= g_r
-        
-        if smoothReconMode > 0 and i % smoothIncrement == 0 and i > 0: #smooth to stem growth of noise
-            if smoothReconMode == 1:
-                # print("Smooth TV")
-                f = denoise_tv_chambolle(f, 0.02, multichannel=False)
-            elif smoothReconMode == 2:
-                h = parameters[4]
-                if i > smoothMaxIteration:
-                    h /= 2.0
-                if i > smoothMaxIteration2:
-                    h /= 4.0
-                # print("Smooth NL h:",h)
-                fReal = denoise_nl_means(np.real(f), patch_size=5, patch_distance=11, h=h, multichannel=False, fast_mode=True).astype(fdtype)
-                # fImag = denoise_nl_means(np.imag(f), patch_size=5, patch_distance=11, h=h, multichannel=False, fast_mode=True).astype(fdtype)
-                f = fReal #+1j*fImag
-            elif smoothReconMode == 3:
-                # print("Smooth Median")
-                fReal = ndimage.median_filter(np.real(f), 3)
-                # fImag = ndimage.median_filter(np.imag(f), 3)
-            f = fReal #+1j*fImag
-            
-        if i%plotIncrement == 0:
-            img = imageio.immask(image, mask, N, N)
-            recon = imageio.immask(f, mask, N, N)
-            recon = np.abs(recon)
-            mse = imageio.immse(img, recon)
-            psnr = imageio.impsnr(img, recon)
-            ssim = imageio.imssim(img.astype(float), recon.astype(float))
-            print("RMSE:", math.sqrt(mse), "PSNR:", psnr, "SSIM:", ssim, end="\r")
-            mses.append(mse)
-            psnrs.append(psnr)
-            ssims.append(ssim)
-        
-    return f, mses, psnrs, ssims
-
-# def plot_angles(angles): 
-#     real = [angle.real for angle in angles]
-#     im = [angle.imag for angle in angles]
-#     plt.plot(real, im, 'o')
-
-#     angles = [np.pi * i / 6 for i in range(0, 7)]
-#     x = [7 * np.cos(angle) for angle in angles]
-#     y = [7 * np.sin(angle) for angle in angles]
-#     for i in range(len(x)):
-#         plt.plot([0, x[i]], [0, y[i]], 'r-')
-
-#     plt.xlim([-7, 7])
-#     plt.ylim([-7, 7])
-#     plt.grid(visible=True, which='both', axis='both')
-#     plt.show()
-
-
-
 #parameter sets (K, k, i, s, h)
 #phantom
 #parameters = [1.2, 1, 381, 30, 8.0] #r=2
@@ -183,7 +92,6 @@ iterations = parameters[2]
 SNR = 30
 floatType = np.float
 twoQuads = True
-addNoise = False
 plotCroppedImages = True
 plotColourBar = True
 plotIncrement = 2
@@ -218,9 +126,6 @@ def plot_angles(angles, colour='skyblue', line='-', linewidth=1, label="angles",
     for angle in angles: 
         imag, real = farey.get_pq(angle)
         ax.plot([0, real], [0, imag], line, c=colour, linewidth=linewidth, label=label)
-
-
-
 
 
 def auto_recon_0(p, num_angles, iterations): 
@@ -585,12 +490,11 @@ def get_gaussian_prime_factors(angle):
 
 
 def noise_work(): 
-    addNoise = True
-    angles, subsetAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,p,p,QUADS,True,K, max_angles=20)    
-    print(angles)
-    noisy = recon_CT(p, angles, subsetAngles, 100)
-    addNoise = False
-    not_noisy = recon_CT(p, angles, subsetAngles, 100)
+    
+    angles, subsetAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,p,p,2,True,K, max_angles=20)    
+    noisy = recon_CT(p, angles, subsetAngles, 100, addNoise = True)
+    not_noisy = recon_CT(p, angles, subsetAngles, 100, addNoise = False)
+
     plt.subplot(1, 3, 1)
     plt.imshow(noisy)
     plt.subplot(1, 3, 2)
@@ -698,7 +602,7 @@ def osem_expand(iterations, p, g_j, os_mValues, projector, backprojector,
     '''
     norm = False
     center = False
-    fdtype = floatType
+    fdtype = np.float
     f = np.ones((p,p), fdtype)
     
     mses = []
@@ -713,6 +617,7 @@ def osem_expand(iterations, p, g_j, os_mValues, projector, backprojector,
         
             # form parenthesised term (g_j / g) from (*)
             r = np.copy(g_j)
+
             for m in mValues:
                 for y in range(p):
                     r[m,y] /= g[m,y]
@@ -759,17 +664,9 @@ def osem_expand(iterations, p, g_j, os_mValues, projector, backprojector,
     return f, mses, psnrs, ssims
 
 
-def recon_CT(p, angles, subsetAngles, iterations): 
+def recon_CT(p, angles, subsetAngles, iterations, addNoise=False): 
+    print(addNoise)
     lena, mask = imageio.phantom(N, p, True, np.uint32, True)
-
-    mt_lena = mojette.transform(lena, angles)
-
-    #add noise 
-    if addNoise: 
-        for i, projection in enumerate(mt_lena): 
-            mt_lena[i] = projection + np.random.normal(0, 1, len(projection)) * 0.05 * np.average(projection)
-
-    rt_lena = mojette.toDRT(mt_lena, angles, p, p, p) 
 
     #convert angles to gradients for OSEM
     subsetsMValues = []
@@ -779,8 +676,15 @@ def recon_CT(p, angles, subsetAngles, iterations):
             m, inv = farey.toFinite(angle, p)
             mValues.append(m)            
         subsetsMValues.append(mValues)
-    print(subsetsMValues)
+    # print(subsetsMValues)
+
+    mt_lena = mojette.transform(lena, angles)
     
+    #add noise 
+    if addNoise:
+        mt_noise(mt_lena, 40) 
+
+    rt_lena = mojette.toDRT(mt_lena, angles, p, p, p) 
     
     recon, mses, psnrs, ssims = osem_expand(iterations, p, rt_lena, subsetsMValues, finite.frt, finite.ifrt, lena, mask)
     recon = np.abs(recon)
@@ -863,7 +767,7 @@ def osem_expand_complex(iterations, p, g_j, os_mValues, projector, backprojector
     return f, mses, psnrs, ssims
 
 
-def recon_MRI(p, angles, subsetAngles, iterations): 
+def recon_MRI(p, angles, subsetAngles, iterations, addNoise=False): 
     image, mask = imageio.phantom(N, p, True, np.uint32, True)
 
     #k-space
@@ -932,7 +836,7 @@ def recon_MRI(p, angles, subsetAngles, iterations):
     return recon, mses, psnrs, ssims
 
 
-def plot_recon(rmseValues, psnrValues, ssimValues, colour = "b", line = '--', label="label"):
+def plot_recon(rmseValues, psnrValues, ssimValues, colour = "b", line = '-', label="label"):
     incX = np.arange(0, len(rmseValues))*plotIncrement
 
     plt.subplot(1, 3, 1)
@@ -961,6 +865,41 @@ def plot_recon(rmseValues, psnrValues, ssimValues, colour = "b", line = '--', la
 #helpers -----------------------------------------------------------------------
 def remove_empty(subset_angles): 
     return [subset for subset in subset_angles if subset != []]
+
+
+def mt_noise(mt_projs, snr):
+    '''
+    Create noise in db for given kSpace and SNR+
+    '''
+    P_S = 0
+    for i, proj in enumerate(mt_projs):
+        P_S += np.sum((np.abs(proj)**2) / (len(proj) * len(mt_projs)))
+
+    P_N = P_S / (10**(snr/10))
+    sigma = math.sqrt(P_N)
+    
+    for u, proj in enumerate(mt_projs):
+        for v, coeff in enumerate(proj):
+            mt_projs[u][v] += np.random.normal(0, sigma)
+
+
+def rt_noise(rt_projs, snr):
+    '''
+    Create noise in db for given kSpace and SNR+
+    '''
+    r, s = rt_projs.shape
+    #pwoer of signal and noise
+    P = np.sum(np.abs(rt_projs)**2)/(r*s)
+    P_N = P / (10**(snr/10))
+    #P_N is equivalent to sigma**2 and signal usually within 3*sigma
+    sigma = math.sqrt(P_N)
+    
+    noise = np.zeros_like(rt_projs)
+    for u, row in enumerate(rt_projs):
+        for v, coeff in enumerate(row):
+            noise[u,v] = np.random.normal(0, sigma)
+            
+    return noise
 
 
 # angle helpers ----------------------------------------------------------------
@@ -1006,12 +945,12 @@ def recon_0(p, num_angles_octant, iterations):
     # plot_angles(angles_MRI, colour="skyblue", line="-.") 
     # plt.figure()
 
-    # recon, mses, psnrs, ssims = recon_CT(p, angles_CT, remove_empty(subsetAngles_CT), iterations)
-    # plot_recon(mses, psnrs, ssims, colour="hotpink", line=LINE_CT)
+    recon, mses, psnrs, ssims = recon_CT(p, angles_CT, remove_empty(subsetAngles_CT), iterations)
+    plot_recon(mses, psnrs, ssims, colour="hotpink", line=LINE_CT)
 
     recon, mses, psnrs, ssims = recon_MRI(p, angles_MRI, remove_empty(subsetAngles_MRI), iterations)
     plot_recon(mses, psnrs, ssims, colour="skyblue", line=LINE_MRI)
-    plt.show()
+    # plt.show()
 
 
 def recon_1(p, num_angles_octant, iterations): 
@@ -1082,9 +1021,17 @@ def recon_1(p, num_angles_octant, iterations):
 
 
 def recon_2(p, num_angles_octant, iterations, type = 4):
+    """Recconstructs with prime angle set + pair/quad set of composite angles. 
+    Plots and saves. 
+
+    Args:
+        p (int): prime size of image
+        num_angles_octant (int): number of angles per octant
+        iterations (int): number of OSEM iterations
+        type (int, optional): Octants to identify equivalent angle in, 1, 2, or 4. Defaults to 4.
+    """
     data_CT = {}
     data_MRI = {}
-
 
     #angles for top two quadrants
     num_angles_MRI = 2 * num_angles_octant - 1  
@@ -1109,7 +1056,7 @@ def recon_2(p, num_angles_octant, iterations, type = 4):
         new_angles_MRI, new_subset_angles_MRI = get_primes(subset_angles_MRI)
         
         #build compositie + prime subset
-        for octant in range(OCTANT_CT):
+        for octant in range(type):
             #add at same index as in regular subset
             angle = comp_equiv_class[octant]
             idx = get_subset_index(angle, subset_composites)
@@ -1129,14 +1076,48 @@ def recon_2(p, num_angles_octant, iterations, type = 4):
 
         recon, rmses_MRI, psnrs_MRI, ssims_MRI = recon_MRI(p, new_angles_MRI, remove_empty(new_subset_angles_MRI), iterations)
         plot_recon(rmses_MRI, psnrs_MRI, ssims_MRI, label=str(comp_equiv_class)+" MRI", colour=next(colour))
-        data_MRI[str(comp_equiv_class)] = {"angles": new_angles_MRI, "rmse": rmses_CT, "psnr": psnrs_MRI, "ssim": ssims_MRI}
+        data_MRI[str(comp_equiv_class)] = {"angles": new_angles_MRI, "rmse": rmses_MRI, "psnr": psnrs_MRI, "ssim": ssims_MRI}
+        
 
-    # path = "results_CT/recon_2/oct_angles_" + str(num_angles_octant) + "_its_" + str(iterations) + ".npz"
-    # np.savez(file=path, data_CT=data_CT)
-    # path = "results_MRI/recon_2/oct_angles_" + str(num_angles_octant) + "_its_" + str(iterations) + ".npz"
-    # np.savez(file=path, data_CT=data_MRI)
+    path = "results_CT/recon_2/oct_angles_" + str(num_angles_octant) + "_its_" + str(iterations) + "_type_" + str(type) + ".npz"
+    np.savez(file=path, data_CT=data_CT)
+    path = "results_MRI/recon_2/oct_angles_" + str(num_angles_octant) + "_its_" + str(iterations) + "_type_" + str(type) + ".npz"
+    np.savez(file=path, data_CT=data_MRI)
 
     plt.show()
+
+
+def recon_3(p, num_angles_octant, iterations)
+    pass
+
+
+def recon_4(p, num_angles_octant, iterations): 
+    """Reconstructs MRI and CT with regular angle set but with noise in kSpace 
+    and mojette projections. Currenlty, CT recon explodes after starting good. 
+    Unsrue why. 
+
+    Args:
+        p (int): prime size of image
+        num_angles_octant (int): number of angles per octant
+        iterations (int): number of OSEM iterations
+    """
+    num_angles_mri = num_angles_octant * OCTANT_MRI - 1 #must be odd to account for (1, 1) having no mirror pair  
+    num_angles_ct = 2 * (num_angles_mri - 2) #each angle maps to itself and its vertical mirror EXCEPT (0, 1) and (1, 0) 
+
+    angles_MRI, subset_angles_MRI = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=OCTANT_MRI,K=K, max_angles=num_angles_mri)  
+    angles_CT, subset_angles_CT = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=OCTANT_CT,K=K, max_angles=num_angles_ct) 
+
+    # recon, mses, psnrs, ssims = recon_CT(p, angles_CT, remove_empty(subsetAngles_CT), iterations, addNoise = False)
+    # plot_recon(mses, psnrs, ssims, colour="hotpink", label="Regular")
+
+    # recon, mses, psnrs, ssims = recon_MRI(p, angles_MRI, remove_empty(subset_angles_MRI), iterations, addNoise = True)
+    # plot_recon(mses, psnrs, ssims, colour="skyblue", label="Noisy")
+    
+    recon, mses, psnrs, ssims = recon_CT(p, angles_CT, remove_empty(subset_angles_CT), iterations, addNoise = True)
+    plot_recon(mses, psnrs, ssims, colour="skyblue", label="Noisy CT")
+
+    plt.show()
+
 
 
 
@@ -1150,19 +1131,21 @@ OCTANT_CT = 4
 LINE_MRI = "-"
 LINE_CT = '-'
 
-def get_MRI_angles(subsetAngles_CT): 
-    angles = []
-    subsetAngles_MRI = []
-    for subset in subsetAngles_CT:
-        angle_set = []
-        for angle in subset: 
-            p, q = farey.get_pq(angle)
-            if q >= 0: 
-                angle_set.append(angle)
-                angles.append(angle)
-        subsetAngles_MRI.append(angle_set)
-    return angles, subsetAngles_MRI
+
 
 if __name__ == "__main__": 
     p = nt.nearestPrime(N)
-    recon_0(p, NUM_OCTANT_ANGLES, ITERATIONS)
+    recon_4(p, NUM_OCTANT_ANGLES, ITERATIONS)
+
+    # num_angles_mri = NUM_OCTANT_ANGLES * OCTANT_MRI - 1 #must be odd to account for (1, 1) having no mirror pair  
+    # num_angles_ct = 2 * (num_angles_mri - 2) #each angle maps to itself and its vertical mirror EXCEPT (0, 1) and (1, 0) 
+
+    # angles_CT, subset_angles_CT = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=OCTANT_CT,K=K, max_angles=num_angles_ct) 
+    
+    # lena, mask = imageio.phantom(N, p, True, np.uint32, True)
+
+    # mt_lena = mojette.transform(lena, angles_CT)
+    # rt_lena = mojette.toDRT(mt_lena, angles_CT, p, p, p) 
+    
+    # plt.imshow(rt_noise(rt_lena, 40))
+    # plt.show()

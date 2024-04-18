@@ -234,8 +234,9 @@ def get_compostie_sets(comps, type):
         p, q = min(abs(p), abs(q)), max(abs(p), abs(q))
         if comp in [angle for subset in subsets for angle in subset]: 
             continue
-
-        if type == 1: 
+        if type == 0: 
+            angles = [farey.farey(p, q)]
+        elif type == 1: 
             angles = [farey.farey(p, q), farey.farey(p, -1*q)]#type 1 - mirror vertical
         elif type == 2: 
             angles = [farey.farey(q, p), farey.farey(q, -1*p)] #type 2 - + 90deg
@@ -494,22 +495,6 @@ def get_gaussian_prime_factors(angle):
         factors.append(factor)
     
     return factors
-
-
-def noise_work(): 
-    
-    angles, subsetAngles, lengths = mojette.angleSubSets_Symmetric(s,subsetsMode,p,p,2,True,K, max_angles=20)    
-    noisy = recon_CT(p, angles, subsetAngles, 100, addNoise = True)
-    not_noisy = recon_CT(p, angles, subsetAngles, 100, addNoise = False)
-
-    plt.subplot(1, 3, 1)
-    plt.imshow(noisy)
-    plt.subplot(1, 3, 2)
-    plt.imshow(not_noisy)
-    plt.subplot(1, 3, 3)
-    plt.imshow(np.abs(not_noisy - noisy))
-    plt.show()
-    pass
 
 
 
@@ -845,70 +830,9 @@ def recon_MRI(p, angles, subsetAngles, iterations, addNoise=False):
 
 #helpers -----------------------------------------------------------------------
 
-def plot_recon(rmseValues, psnrValues, ssimValues, colour = "b", line = '-', label="label"):
-    incX = np.arange(0, len(rmseValues))*plotIncrement
-
-    plt.subplot(1, 3, 1)
-    plt.plot(incX, rmseValues, c=colour, ls=line, label=label)
-    plt.title('Error Convergence of the Finite OSEM')
-    plt.xlabel('Iterations')
-    plt.ylabel('RMSE')
-
-    plt.subplot(1, 3, 2)
-    plt.plot(incX, ssimValues, c=colour, ls=line, label=label)
-    plt.ylim(0, 1.0)
-    plt.title('Simarlity Convergence of the Finite OSSEM')
-    plt.xlabel('Iterations')
-    plt.ylabel('SSIM')
-
-    plt.subplot(1, 3, 3)
-    plt.plot(incX, psnrValues, c=colour, ls=line, label=label)
-    plt.ylim(0, 45.0)
-    plt.title('PSNR Convergence of the Finite OSSEM')
-    plt.xlabel('Iterations')
-    plt.ylabel('PSNR')
-    plt.legend()
-
 
 def remove_empty(subset_angles): 
     return [subset for subset in subset_angles if subset != []]
-
-
-def mt_noise(mt_projs, snr):
-    '''
-    Create noise in db for given kSpace and SNR+
-    '''
-    P_S = 0
-    for i, proj in enumerate(mt_projs):
-        P_S += np.sum((np.abs(proj)**2) / (len(proj) * len(mt_projs)))
-
-    P_N = P_S / (10**(snr/10))
-    sigma = math.sqrt(P_N)
-    
-    for u, proj in enumerate(mt_projs):
-        for v, coeff in enumerate(proj):
-            mt_projs[u][v] += np.random.normal(0, sigma)
-
-    #i_sum / number of bins <- mean
-
-
-def rt_noise(rt_projs, snr):
-    '''
-    Create noise in db for given kSpace and SNR+
-    '''
-    r, s = rt_projs.shape
-    #pwoer of signal and noise
-    P = np.sum(np.abs(rt_projs)**2)/(r*s)
-    P_N = P / (10**(snr/10))
-    #P_N is equivalent to sigma**2 and signal usually within 3*sigma
-    sigma = math.sqrt(P_N)
-    
-    noise = np.zeros_like(rt_projs)
-    for u, row in enumerate(rt_projs):
-        for v, coeff in enumerate(row):
-            noise[u,v] = np.random.normal(0, sigma)
-            
-    return noise
 
 
 # angle helpers ----------------------------------------------------------------
@@ -975,114 +899,105 @@ def closest_gaussian_prime(p_size, composite):
 
 
 # reconstructions --------------------------------------------------------------
-def recon_0(p, num_angles_octant, iterations, colour_MRI="skyblue", colour_CT="hotpink"):
-    """Reconstructs and plort MRI and CT reconstruction from same angle set. 
-    Prime example of the algorithms applicability to CT reconstruction. 
-    """
-    data_CT = {}
-    data_MRI = {}
+MRI_RECON = 1
+CT_RECON = 0
 
-    num_angles_mri = num_angles_octant * OCTANT_MRI - 1 #must be odd to account for (1, 1) having no mirror pair  
-    num_angles_ct = 2 * (num_angles_mri - 2) #each angle maps to itself and its vertical mirror EXCEPT (0, 1) and (1, 0) 
-
-    angles_CT, subsetAngles_CT = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=OCTANT_CT,K=K, max_angles=num_angles_ct) 
-    angles_MRI, subsetAngles_MRI = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=OCTANT_MRI,K=K, max_angles=num_angles_mri)  
-    # plot_angles(angles_CT, colour="hotpink") 
-    # plot_angles(angles_MRI, colour="skyblue", line="-.") 
-    # plt.figure()
-
-    recon, rmses_CT, psnrs_CT, ssims_CT = recon_CT(p, angles_CT, remove_empty(subsetAngles_CT), iterations, addNoise=True)
-    plot_recon(rmses_CT, psnrs_CT, ssims_CT, colour=colour_CT, line=LINE_CT, label="CT " + str(num_angles_octant))
-
-    # recon, rmses_MRI, psnrs_MRI, ssims_MRI = recon_MRI(p, angles_MRI, remove_empty(subsetAngles_MRI), iterations)
-    # plot_recon(rmses_MRI, psnrs_MRI, ssims_MRI, colour=colour_MRI, line=LINE_MRI, label="MRI " + str(num_angles_octant))
-
-    # data_CT["regular"] = {"angles": angles_CT, "its": iterations, "rmse": rmses_CT, "psnr": psnrs_CT, "ssim": ssims_CT}
-    # data_MRI["regular"] = {"angles": angles_MRI, "its": iterations, "rmse": rmses_MRI, "psnr": psnrs_MRI, "ssim": ssims_MRI}
-
-    # path = "results_CT/recon_0/its_" + str(iterations)+"_angles_" + str(num_angles_octant) + ".npz"
-    # np.savez(file=path, data_CT=data_CT)
-    # path = "results_MRI/recon_0/its_" + str(iterations)+"_angles_" + str(num_angles_octant) + ".npz"
-    # np.savez(file=path, data_CT=data_MRI)
-
-
-def recon_1(p, num_angles_octant, iterations): 
-    """plots reconstructions of regular, prime, and composite angle sets for both CT and MRI
+def recon_0(p, num_angles_octant, iterations, recon=MRI_RECON, colour="hotpink"):
+    """Completes one MRI or CT reconstruction. Plots and saves reconstruction 
+    and error info. 
 
     Args:
         p (int): prime size of image
         num_angles_octant (int): number of angles per octant
         iterations (int): number of OSEM iterations
+        recon (int, optional): Specificy MRI recon (=1) or CT recon (=0). 
+        Defaults to 0.
+        colour (str, optional): Colour of plot. Defaults to "hotpink".
     """
+    data = {}
 
-    colour=iter(plt.cm.jet(np.linspace(0,1,6+1)))
-    data_CT = {}
-    data_MRI = {}
-
+    #num angles given to each reconstruction. note: number CT uses is the number 
+    #of projections for both reconstructions. 
     num_angles_mri = num_angles_octant * OCTANT_MRI - 1 #must be odd to account for (1, 1) having no mirror pair  
     num_angles_ct = 2 * (num_angles_mri - 2) #each angle maps to itself and its vertical mirror EXCEPT (0, 1) and (1, 0) 
 
-    #regular angle set
-    angles_CT, subset_angles_CT = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=OCTANT_CT,K=K, max_angles=num_angles_ct) 
-    angles_MRI, subset_angles_MRI = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=OCTANT_MRI,K=K, max_angles=num_angles_mri)  
+    if recon: #MRI RECON
+        num_angles = num_angles_mri
+        octant = OCTANT_MRI
+        path_head = "results_MRI/"
+        title = "MRI reconstruction"
+    else: #CT RECON
+        num_angles = num_angles_ct
+        octant = OCTANT_CT
+        path_head = "results_CT/"
+        title = "CT reconstruction"
 
-    _, rmses_CT, psnrs_CT, ssims_CT = recon_CT(p, angles_CT, subset_angles_CT, iterations)
-    _, rmses_MRI, psnrs_MRI, ssims_MRI = recon_MRI(p, angles_MRI, subset_angles_MRI, iterations)
+    angles, subsetAngles = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=octant,K=K, max_angles=num_angles)  
 
-    plot_recon(rmses_CT, psnrs_CT, ssims_CT, colour=next(colour), label="regular CT")
-    plot_recon(rmses_MRI, psnrs_MRI, ssims_MRI, colour=next(colour), label="regular MRI", line=LINE_MRI)
-    
-    #save
-    data_CT["regular"] = {"angles": angles_CT, "rmse": rmses_CT, "psnr": psnrs_CT, "ssim": ssims_CT}
-    data_MRI["regular"] = {"angles": angles_MRI, "rmse": rmses_MRI, "psnr": psnrs_MRI, "ssim": ssims_MRI}
+    recon, rmses, psnrs, ssims = recon_MRI(p, angles, remove_empty(subsetAngles), iterations)
+    plot_recon(rmses, psnrs, ssims, colour=colour, label="num projections: " + str(num_angles_ct))
+    plt.suptitle(title)
 
+    data["regular"] = {"angles": angles, "its": iterations, "rmse": rmses, "psnr": psnrs, "ssim": ssims}
 
-    #primes in each angle set 
-    primes_CT, primes_subset_CT = get_primes(subset_angles_CT)
-    primes_MRI, primes_subset_MRI = get_primes(subset_angles_MRI)
-
-    _, rmses_CT, psnrs_CT, ssims_CT = recon_CT(p, primes_CT, remove_empty(primes_subset_CT), iterations)
-    _, rmses_MRI, psnrs_MRI, ssims_MRI = recon_MRI(p, primes_MRI, remove_empty(primes_subset_MRI), iterations)
-
-    plot_recon(rmses_CT, psnrs_CT, ssims_CT, colour=next(colour), label="prime CT")
-    plot_recon(rmses_MRI, psnrs_MRI, ssims_MRI, colour=next(colour), label="prime MRI", line=LINE_MRI)
-
-    #save
-    data_CT["prime"] = {"angles": primes_CT, "rmse": rmses_CT, "psnr": psnrs_CT, "ssim": ssims_CT}
-    data_MRI["prime"] = {"angles": primes_MRI, "rmse": rmses_MRI, "psnr": psnrs_MRI, "ssim": ssims_MRI}
-
-    #composites in each angle set 
-    comps_CT, comps_subset_CT = get_composites(subset_angles_CT)
-    comps_MRI, comps_subset_MRI = get_composites(subset_angles_MRI)
-
-    _, rmses_CT, psnrs_CT, ssims_CT = recon_CT(p, comps_CT, remove_empty(comps_subset_CT), iterations)
-    _, rmses_MRI, psnrs_MRI, ssims_MRI = recon_MRI(p, comps_MRI, remove_empty(comps_subset_MRI), iterations)
-
-    plot_recon(rmses_CT, psnrs_CT, ssims_CT, colour=next(colour), label="composite CT")
-    plot_recon(rmses_MRI, psnrs_MRI, ssims_MRI, colour=next(colour), label="composite MRI", line=LINE_MRI)
-
-    #save
-    data_CT["composite"] = {"angles": comps_CT, "rmse": rmses_CT, "psnr": psnrs_CT, "ssim": ssims_CT}
-    data_MRI["composite"] = {"angles": comps_MRI, "rmse": rmses_MRI, "psnr": psnrs_MRI, "ssim": ssims_MRI}
-
-    path = "results_CT/recon_1/oct_angles_" + str(num_angles_octant) + "_its_" + str(iterations) + ".npz"
-    np.savez(file=path, data_CT=data_CT)
-    path = "results_MRI/recon_1/oct_angles_" + str(num_angles_octant) + "_its_" + str(iterations) + ".npz"
-    np.savez(file=path, data_CT=data_MRI)
-
-    plt.show()
+   
+    path = path_head + "recon_0/its_" + str(iterations)+"_angles_" + str(num_angles_octant) + ".npz"
+    np.savez(file=path, data=data)
 
 
-def recon_2(p, num_angles_octant, iterations, type = 4):
-    """Recconstructs with prime angle set + pair/quad set of composite angles. 
+def recon_1(p, num_angles_octant, iterations, recon=MRI_RECON): 
+    """Reconstructions of regular, prime, and composite angle sets for CT or MRI. 
     Plots and saves. 
 
     Args:
         p (int): prime size of image
         num_angles_octant (int): number of angles per octant
         iterations (int): number of OSEM iterations
-        type (int, optional): Octants to identify equivalent angle in, 1, 2, or 4. Defaults to 4.
+        recon (int, optional): Specificy MRI recon (=1) or CT recon (=0). 
+        Defaults to 0
     """
+
+    colour=iter(plt.cm.jet(np.linspace(0,1,3+1)))
+    data = {}
+
+    num_angles_mri = num_angles_octant * OCTANT_MRI - 1 #must be odd to account for (1, 1) having no mirror pair  
+    num_angles_ct = 2 * (num_angles_mri - 2) #each angle maps to itself and its vertical mirror EXCEPT (0, 1) and (1, 0) 
+
+    if recon: #MRI RECON
+        num_angles = num_angles_mri
+        octant = OCTANT_MRI
+        path_head = "results_MRI/"
+        title = "MRI prime reconstruction"
+    else: #CT RECON
+        num_angles = num_angles_ct
+        octant = OCTANT_CT
+        path_head = "results_CT/"
+        title = "CT prime reconstruction"
+
+    #regular angle set recon, plot and save
+    angles, subset_angles = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=octant,K=K, max_angles=num_angles) 
+    _, rmses, psnrs, ssims = recon_CT(p, angles, subset_angles, iterations)
+    plot_recon(rmses, psnrs, ssims, colour=next(colour), label="regular recon")
+    data["regular"] = {"angles": angles, "rmse": rmses, "psnr": psnrs, "ssim": ssims}
+
+
+    #prime angle set recon, plot and save
+    primes, primes_subset = get_primes(subset_angles)
+    _, rmses, psnrs, ssims = recon_CT(p, primes, remove_empty(primes_subset), iterations)
+    plot_recon(rmses, psnrs, ssims, colour=next(colour), label="prime recon")
+    data["prime"] = {"angles": primes, "rmse": rmses, "psnr": psnrs, "ssim": ssims}
+
+    #composite angle set recon, plot and save
+    comps, comps_subset = get_composites(subset_angles)
+    _, rmses, psnrs, ssims = recon_CT(p, comps, remove_empty(comps_subset), iterations)
+    plot_recon(rmses, psnrs, ssims, colour=next(colour), label="composite")
+    data["composite"] = {"angles": comps, "rmse": rmses, "psnr": psnrs, "ssim": ssims}
+
+    path = path_head + "recon_1/oct_angles_" + str(num_angles_octant) + "_its_" + str(iterations) + ".npz"
+    np.savez(file=path, data=data)
+
+
+def recon_2(p, num_angles_octant, iterations): 
     data_CT = {}
     data_MRI = {}
 
@@ -1091,55 +1006,61 @@ def recon_2(p, num_angles_octant, iterations, type = 4):
     num_angles_CT = 2 * (num_angles_MRI - 2)
     angles_CT, subset_angles_CT = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=OCTANT_CT,K=K, max_angles=num_angles_CT) 
     angles_MRI, subset_angles_MRI = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=OCTANT_MRI,K=K, max_angles=num_angles_MRI)  
-
-    #composites in top two quadrants 
-    composites, subset_composites = get_composites(subset_angles_CT)
-    octant_composites = get_compostie_sets(composites, type) # sort into octant equivalence classes (same angle in different octants)
     
-    #plot prep
-    colour=iter(plt.cm.gist_rainbow(np.linspace(0,1,len(2 * octant_composites)+3)))
+    composites, subset_composites = get_composites(subset_angles_CT)
+    
+    #set up dictionaries pre recon 
+    for [comp] in get_compostie_sets(composites, 0): 
+        data_CT[comp] = {}
+        data_MRI[comp] = {}
 
-    #plot regular recons as a base line
-    recon, rmses_CT, psnrs_CT, ssims_CT = recon_CT(p, angles_CT, remove_empty(subset_angles_CT), iterations)
-    plot_recon(rmses_CT, psnrs_CT, ssims_CT, label="regular CT", colour=next(colour))
+    #reconstruct CT and MRI for the three different equivalent classes 
+    for equiv_class_type in [1, 2, 4]: 
+        equiv_comp_classes = get_compostie_sets(composites, equiv_class_type)
 
-    recon, rmses_MRI, psnrs_MRI, ssims_MRI = recon_MRI(p, angles_MRI, remove_empty(subset_angles_MRI), iterations)
-    plot_recon(rmses_MRI, psnrs_MRI, ssims_MRI, label="regular MRI", colour=next(colour))
+        plt.figure(figsize=(16, 8))
+        colour=iter(plt.cm.gist_rainbow(np.linspace(0,1,len(2 * equiv_comp_classes)+3)))
 
-    for i, comp_equiv_class in enumerate(octant_composites):
-        #reset compositie + prime subset
-        new_angles_CT, new_subset_angles_CT = get_primes(subset_angles_CT) #this is stupid it won't seperate the lists even if i list(prime_subset_CT) >:(
-        new_angles_MRI, new_subset_angles_MRI = get_primes(subset_angles_MRI)
-        
-        #build compositie + prime subset
-        for i, angle in enumerate(comp_equiv_class):
-            #add at same index as in regular subset
-            idx = get_subset_index(angle, subset_composites)
-            new_subset_angles_CT[idx].append(angle)
-            new_angles_CT.append(angle)
+        for i, comp_equiv_class in enumerate(equiv_comp_classes):
+            
+            #reset angle set to prime angles
+            new_angles_CT, new_subset_angles_CT = get_primes(subset_angles_CT) #this is stupid it won't seperate the lists even if i list(prime_subset_CT) >:(
+            new_angles_MRI, new_subset_angles_MRI = get_primes(subset_angles_MRI)
+            
+            #add equivalent class to prime angle set 
+            for i, angle in enumerate(comp_equiv_class):
+                #add at same index as in regular subset
+                idx = get_subset_index(angle, subset_composites)
+                new_subset_angles_CT[idx].append(angle)
+                new_angles_CT.append(angle)
 
-            #only adding first quadrant angles to MRI subset
-            if i < OCTANT_MRI: 
-                angles_MRI.append(angle)
-                new_subset_angles_MRI[idx].append(angle)
-                new_angles_MRI.append(angle)
+                #only adding first quadrant angles to MRI subset
+                a, b = farey.get_pq(angle)
+                if a >= 0 and b >=0: 
+                    angles_MRI.append(angle)
+                    new_subset_angles_MRI[idx].append(angle)
+                    new_angles_MRI.append(angle)
 
-        #reconstruct with new compositie + prime subset 
-        recon, rmses_CT, psnrs_CT, ssims_CT = recon_CT(p, new_angles_CT, remove_empty(new_subset_angles_CT), iterations)
-        plot_recon(rmses_CT, psnrs_CT, ssims_CT, label=str(comp_equiv_class)+" CT", colour=next(colour))
-        data_CT[str(comp_equiv_class)] = {"angles": new_angles_CT, "rmse": rmses_CT, "psnr": psnrs_CT, "ssim": ssims_CT}
+            #reconstruct with new compositie + prime subset 
+            recon, rmses_CT, psnrs_CT, ssims_CT = recon_CT(p, new_angles_CT, remove_empty(new_subset_angles_CT), iterations)
+            plot_recon(rmses_CT, psnrs_CT, ssims_CT, label=str(comp_equiv_class)+" CT", colour=next(colour))
 
-        recon, rmses_MRI, psnrs_MRI, ssims_MRI = recon_MRI(p, new_angles_MRI, remove_empty(new_subset_angles_MRI), iterations)
-        plot_recon(rmses_MRI, psnrs_MRI, ssims_MRI, label=str(comp_equiv_class)+" MRI", colour=next(colour))
-        data_MRI[str(comp_equiv_class)] = {"angles": new_angles_MRI, "rmse": rmses_MRI, "psnr": psnrs_MRI, "ssim": ssims_MRI}
-        
+            recon, rmses_MRI, psnrs_MRI, ssims_MRI = recon_MRI(p, new_angles_MRI, remove_empty(new_subset_angles_MRI), iterations)
+            plot_recon(rmses_MRI, psnrs_MRI, ssims_MRI, label=str(comp_equiv_class)+" MRI", colour=next(colour))
 
-    path = "results_CT/recon_2/oct_angles_" + str(num_angles_octant) + "_its_" + str(iterations) + "_type_" + str(type) + ".npz"
+            #convert to correct key for equiv angle 
+            a, b = farey.get_pq(comp_equiv_class[0])
+            a, b = min(abs(a), abs(b)), max(abs(a), abs(b))
+            comp = farey.farey(a, b)
+            data_CT[comp][equiv_class_type] = {"angles": new_angles_CT, "rmse": rmses_CT, "psnr": psnrs_CT, "ssim": ssims_CT}
+            data_MRI[comp][equiv_class_type] = {"angles": new_angles_MRI, "rmse": rmses_MRI, "psnr": psnrs_MRI, "ssim": ssims_MRI}
+            
+    path = "results_CT/recon_2/oct_angles_" + str(num_angles_octant) + "_its_" + str(iterations) + "_rev2.npz"
     np.savez(file=path, data_CT=data_CT)
-    path = "results_MRI/recon_2/oct_angles_" + str(num_angles_octant) + "_its_" + str(iterations) + "_type_" + str(type) + ".npz"
-    np.savez(file=path, data_CT=data_MRI)
+    path = "results_MRI/recon_2/oct_angles_" + str(num_angles_octant) + "_its_" + str(iterations) + "_rev2.npz"
+    np.savez(file=path, data_MRI=data_MRI)
 
-    plt.savefig("result_MRI_CT/recon_2/angles_" + str(num_angles_octant) + "_its_" + str(iterations) + "_type_" + str(type) + ".png")
+    plt.savefig("result_MRI_CT/recon_2/angles_" + str(num_angles_octant) + "_its_" + str(iterations) + "_rev2.png")
 
 
 def recon_3(p, num_angles_octant, iterations):
@@ -1216,53 +1137,68 @@ def recon_0b(p, iterations):
     plt.savefig("result_MRI_CT/recon_0/recon_0b.png")
 
 
-def plotter_temp(path1, path2, path3): 
-    data_1 = np.load(path1)
-    data_1 = data_1["data_CT"].item()
-    data_2 = np.load(path2)
-    data_2 = data_2["data_CT"].item()
-    data_3 = np.load(path3)
-    data_3 = data_3["data_CT"].item()
-    
-    colour=iter(plt.cm.gist_rainbow(np.linspace(0,1,len(data_1.keys())+3)))
+# plotters ---------------------------------------------------------------------
+def plot_recon(rmseValues, psnrValues, ssimValues, colour = "b", line = '-', label="label"):
+    incX = np.arange(0, len(rmseValues))*plotIncrement
 
-    
-    for key, value in data_1.items(): 
-        [comp, _], _ = get_composites([value["angles"]])
-        plot_recon(value["rmse"], value["psnr"], value["ssim"], label=key, colour=next(colour))
+    plt.subplot(1, 3, 1)
+    plt.plot(incX, rmseValues, c=colour, ls=line, label=label)
+    plt.title('Error Convergence of the Finite OSEM')
+    plt.xlabel('Iterations')
+    plt.ylabel('RMSE')
 
-        p, q = farey.get_pq(comp)
-        oct_1_comp = comp
-        oct_2_comp = farey.farey(q, p)
+    plt.subplot(1, 3, 2)
+    plt.plot(incX, ssimValues, c=colour, ls=line, label=label)
+    plt.ylim(0, 1.0)
+    plt.title('Simarlity Convergence of the Finite OSSEM')
+    plt.xlabel('Iterations')
+    plt.ylabel('SSIM')
 
-        for key_2, value_2 in data_2.items(): 
-            if oct_1_comp in value_2["angles"] or oct_2_comp in value_2["angles"]: 
-                plot_recon(value_2["rmse"], value_2["psnr"], value_2["ssim"], label=key_2, colour=next(colour))
+    plt.subplot(1, 3, 3)
+    plt.plot(incX, psnrValues, c=colour, ls=line, label=label)
+    plt.ylim(0, 45.0)
+    plt.title('PSNR Convergence of the Finite OSSEM')
+    plt.xlabel('Iterations')
+    plt.ylabel('PSNR')
+    plt.legend()
 
-        for key_3, value_3 in data_3.items(): 
-            if oct_1_comp in value_3["angles"] or oct_2_comp in value_3["angles"]: 
-                plot_recon(value_3["rmse"], value_3["psnr"], value_3["ssim"], label=key_3, colour=next(colour))
 
-        break
-        
-        #     p, q = farey.get_pq(comps[0])
-        #     print(data_1.keys())
-        #     if str(comps[0]) in data_1.keys(): 
-        #         print("YAY")
-    
-    # plt.suptitle(title)
-    
+def plot_recon_2(path, plot_angle=True, plot_type=True):
+    data = np.load(path)["data_MRI"].item()
+    equiv_class_types = [1, 2, 4]
+    if plot_angle:
+        for angle in data.keys(): 
+            plt.figure(figsize=(16, 8))
+            colour=iter(plt.cm.gist_rainbow(np.linspace(0,1,len(equiv_class_types+1))))
+            for equiv_class_type in equiv_class_types: 
+                error_info = data[angle][equiv_class_type]
+                plot_recon(error_info["rmse"], error_info["psnr"], error_info["ssim"], label = str(angle) + " type " + str(equiv_class_type), colour = next(colour))
+
+    if plot_type: 
+        for equiv_class_type in equiv_class_types: 
+            plt.figure(figsize=(16, 8))
+            colour=iter(plt.cm.gist_rainbow(np.linspace(0,1,len(data.keys())+1)))
+            for angle in data.keys(): 
+                error_info = data[angle][equiv_class_type]
+                plot_recon(error_info["rmse"], error_info["psnr"], error_info["ssim"], label = str(angle) + " type " + str(equiv_class_type), colour = next(colour))
+
+    plt.show()
+
+
+
     
 
 #Shes a runner shes a track star -----------------------------------------------
 #recon constants
 NUM_OCTANT_ANGLES = 20
-ITERATIONS = 100
+ITERATIONS = 30
 OCTANT_MRI = 2
 OCTANT_CT = 4
 #plotting constants
 LINE_MRI = "--"
 LINE_CT = '-'
+MRI_RECON = 1
+CT_RECON = 0
 
 # noise from shakes ------------------------------------------------------------
 def add_noise(mt_projs, SNR=0.95):
@@ -1275,47 +1211,79 @@ def add_noise(mt_projs, SNR=0.95):
             mt_projs[m][t] = random.normalvariate(bin, 0.15*(1.0-SNR)*bin)
 
 
+
+            
 if __name__ == "__main__": 
-
-    path1 = "results_MRI/recon_2/oct_angles_20_its_300_type_1.npz"
-
-    path2 = "results_MRI/recon_2/oct_angles_20_its_300_type_2.npz"
-
-    path3 = "results_MRI/recon_2/oct_angles_20_its_300_type_4.npz"
-    plotter_temp(path1, path2, path3)
+    p = nt.nearestPrime(N)
+    recon_1(p, NUM_OCTANT_ANGLES, ITERATIONS, CT_RECON)
     plt.show()
 
-
-    # p = nt.nearestPrime(N)
-    # num_angles_mri = NUM_OCTANT_ANGLES * OCTANT_MRI - 1 #must be odd to account for (1, 1) having no mirror pair  
-    # num_angles_ct = 2 * (num_angles_mri - 2) #each angle maps to itself and its vertical mirror EXCEPT (0, 1) and (1, 0) 
-
-    # angles_CT, subsetAngles_CT = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=OCTANT_CT,K=K, max_angles=num_angles_ct) 
-    
-    # recon, rmses_CT, psnrs_CT, ssims_CT = recon_CT(p, angles_CT, remove_empty(subsetAngles_CT), iterations)
-    # plot_recon(rmses_CT, psnrs_CT, ssims_CT, colour="hotpink", line=LINE_CT, label="CT Regular")
-
-    # for snr in [0.95, 0.85, 0.75, 0.65]:
-    #     recon, rmses_CT, psnrs_CT, ssims_CT = recon_CT(p, angles_CT, remove_empty(subsetAngles_CT), iterations, addNoise=True, snr = snr)
-    #     plot_recon(rmses_CT, psnrs_CT, ssims_CT, colour="skyblue", line=LINE_CT, label="CT Noisy " + str(snr))
-
-
-    # plt.show()
-
     
 
-    # plt.show()
 
+# def recon_1(p, num_angles_octant, iterations): 
+#     """plots reconstructions of regular, prime, and composite angle sets for both CT and MRI
 
-    # plt.figure(figsize=(16, 8))
-    # recon_0b(p, ITERATIONS)
+#     Args:
+#         p (int): prime size of image
+#         num_angles_octant (int): number of angles per octant
+#         iterations (int): number of OSEM iterations
+#     """
 
-    # plt.figure(figsize=(16, 8))
-    # recon_2(p, NUM_OCTANT_ANGLES, ITERATIONS, type=1)
+#     colour=iter(plt.cm.jet(np.linspace(0,1,6+1)))
+#     data_CT = {}
+#     data_MRI = {}
 
-    # plt.figure(figsize=(16, 8))
-    # recon_2(p, NUM_OCTANT_ANGLES, ITERATIONS, type=2)
+#     num_angles_mri = num_angles_octant * OCTANT_MRI - 1 #must be odd to account for (1, 1) having no mirror pair  
+#     num_angles_ct = 2 * (num_angles_mri - 2) #each angle maps to itself and its vertical mirror EXCEPT (0, 1) and (1, 0) 
 
-    # plt.figure(figsize=(16, 8))
-    # recon_2(p, NUM_OCTANT_ANGLES, ITERATIONS, type=4)
+#     #regular angle set
+#     angles_CT, subset_angles_CT = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=OCTANT_CT,K=K, max_angles=num_angles_ct) 
+#     angles_MRI, subset_angles_MRI = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=OCTANT_MRI,K=K, max_angles=num_angles_mri)  
+
+#     _, rmses_CT, psnrs_CT, ssims_CT = recon_CT(p, angles_CT, subset_angles_CT, iterations)
+#     _, rmses_MRI, psnrs_MRI, ssims_MRI = recon_MRI(p, angles_MRI, subset_angles_MRI, iterations)
+
+#     plot_recon(rmses_CT, psnrs_CT, ssims_CT, colour=next(colour), label="regular CT")
+#     plot_recon(rmses_MRI, psnrs_MRI, ssims_MRI, colour=next(colour), label="regular MRI", line=LINE_MRI)
     
+#     #save
+#     data_CT["regular"] = {"angles": angles_CT, "rmse": rmses_CT, "psnr": psnrs_CT, "ssim": ssims_CT}
+#     data_MRI["regular"] = {"angles": angles_MRI, "rmse": rmses_MRI, "psnr": psnrs_MRI, "ssim": ssims_MRI}
+
+
+#     #primes in each angle set 
+#     primes_CT, primes_subset_CT = get_primes(subset_angles_CT)
+#     primes_MRI, primes_subset_MRI = get_primes(subset_angles_MRI)
+
+#     _, rmses_CT, psnrs_CT, ssims_CT = recon_CT(p, primes_CT, remove_empty(primes_subset_CT), iterations)
+#     _, rmses_MRI, psnrs_MRI, ssims_MRI = recon_MRI(p, primes_MRI, remove_empty(primes_subset_MRI), iterations)
+
+#     plot_recon(rmses_CT, psnrs_CT, ssims_CT, colour=next(colour), label="prime CT")
+#     plot_recon(rmses_MRI, psnrs_MRI, ssims_MRI, colour=next(colour), label="prime MRI", line=LINE_MRI)
+
+#     #save
+#     data_CT["prime"] = {"angles": primes_CT, "rmse": rmses_CT, "psnr": psnrs_CT, "ssim": ssims_CT}
+#     data_MRI["prime"] = {"angles": primes_MRI, "rmse": rmses_MRI, "psnr": psnrs_MRI, "ssim": ssims_MRI}
+
+#     #composites in each angle set 
+#     comps_CT, comps_subset_CT = get_composites(subset_angles_CT)
+#     comps_MRI, comps_subset_MRI = get_composites(subset_angles_MRI)
+
+#     _, rmses_CT, psnrs_CT, ssims_CT = recon_CT(p, comps_CT, remove_empty(comps_subset_CT), iterations)
+#     _, rmses_MRI, psnrs_MRI, ssims_MRI = recon_MRI(p, comps_MRI, remove_empty(comps_subset_MRI), iterations)
+
+#     plot_recon(rmses_CT, psnrs_CT, ssims_CT, colour=next(colour), label="composite CT")
+#     plot_recon(rmses_MRI, psnrs_MRI, ssims_MRI, colour=next(colour), label="composite MRI", line=LINE_MRI)
+
+#     #save
+#     data_CT["composite"] = {"angles": comps_CT, "rmse": rmses_CT, "psnr": psnrs_CT, "ssim": ssims_CT}
+#     data_MRI["composite"] = {"angles": comps_MRI, "rmse": rmses_MRI, "psnr": psnrs_MRI, "ssim": ssims_MRI}
+
+#     path = "results_CT/recon_1/oct_angles_" + str(num_angles_octant) + "_its_" + str(iterations) + ".npz"
+#     np.savez(file=path, data_CT=data_CT)
+#     path = "results_MRI/recon_1/oct_angles_" + str(num_angles_octant) + "_its_" + str(iterations) + ".npz"
+#     np.savez(file=path, data_CT=data_MRI)
+
+#     plt.show()
+

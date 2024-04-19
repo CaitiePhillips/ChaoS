@@ -632,45 +632,40 @@ def closest_gaussian_prime(p_size, composite):
     fareyVectors.generatePrime(p_size-1, 1)
     vectors = fareyVectors.vectors
 
-    close_primes = []
+    p_neg, q_neg = farey.get_pq(composite)
+    composite = farey.farey(abs(p_neg), abs(q_neg))
     angle_0 = vector_angle(composite)
 
-    for vector in vectors: 
-        if len(close_primes) < 20: #find closest 20 and choose that with the smallest norm 
-            close_primes.append(vector)
-            sorted(close_primes, key=lambda x: abs(vector_angle(x) - angle_0))
-        else: 
-            angle = vector_angle(vector)
+    close_primes = []
 
-            for i, prime in enumerate(close_primes): 
-                prime_angle = vector_angle(prime)
+    for oct_vector in vectors: 
+        p, q = farey.get_pq(oct_vector)
+        for vector in [oct_vector, farey.farey(q, p)]: #check angles in both octants 
+            if len(close_primes) < 10: #find closest 20 and choose that with the smallest norm 
+                close_primes.append(vector)
+                sorted(close_primes, key=lambda x: abs(vector_angle(x) - angle_0))
+            else: 
+                angle = vector_angle(vector)
+                dist = abs(angle - angle_0)
 
-                if abs(angle - angle_0) < abs(prime_angle - angle_0): 
-                    close_primes = close_primes[0:i] + [vector] + close_primes[i:-1]
-                    break
+                for i, prime in enumerate(close_primes): 
+                    prime_angle = vector_angle(prime)
 
-    plot_angles(close_primes)    
-    plot_angles([composite], colour="hotpink")         
-
-    close_primes = sorted(close_primes, key=lambda x: abs(EUCLID_NORM(x) - EUCLID_NORM(composite)))   
-    plot_angles([close_primes[0]], colour="limegreen")
-    print(close_primes[0])
-    plt.show()
-        
-    #[(81+34j), (82+35j), (117+50j), (102+43j), (109+46j), (112+47j), (40+17j), (26+11j), (61+26j), (113+48j), (85+36j), (47+20j)]
-    # plot_angles([composite], "hotpink")
-    return close_primes[0]
+                    if dist < abs(prime_angle - angle_0): 
+                        close_primes = close_primes[0:i] + [vector] + close_primes[i:-1]
+                        break
 
 
-    # p, q = farey.get_pq(min_vector)
-    # if p_neg < 0: 
-    #     p = -1 * p
-    # if q_neg < 0: 
-    #     q = -1 * q
+    #sort to identify the smallest norm 
+    close_primes = sorted(close_primes, key=EUCLID_NORM)  
+    #adjust for correct quadrant 
+    p, q = farey.get_pq(close_primes[0])
+    if p_neg < 0: 
+        p = -1 * p
+    if q_neg < 0: 
+        q = -1 * q
 
-    # return farey.farey(p, q)
-
-
+    return farey.farey(p, q)
 
 # base angle set reconstructions -----------------------------------------------
 MRI_RECON = 1
@@ -753,7 +748,6 @@ def prime_recon(p, num_angles_octant, iterations, recon_type=MRI_RECON, colour="
     return angles, recon_im, rmses, psnrs, ssims
 
 
-
 def composite_recon(p, num_angles_octant, iterations, recon_type=MRI_RECON, colour="mediumpurple", line="-", noisy=False): 
     """Completes one MRI or CT reconstruction with only the composite angle set. 
     Plots error info. 
@@ -831,7 +825,7 @@ def comp_recplacement_recon(p, num_angles_octant, iterations, recon_type=MRI_REC
     
     recon_im, rmses, psnrs, ssims = recon(p, angles, remove_empty(subset_angles), iterations, noisy)
     plot_recon(rmses, psnrs, ssims, colour=colour, line="--", label="prime replacement, " + str(num_angles_ct) + " projections")
-
+    
     return angles, recon_im, rmses, psnrs, ssims
 
 
@@ -1092,7 +1086,7 @@ def plot_recon_2(path, plot_angle=True, plot_type=True):
 #Shes a runner shes a track star -----------------------------------------------
 #recon constants
 NUM_OCTANT_ANGLES = 20 + 1
-ITERATIONS = 200
+ITERATIONS = 2
 OCTANT_MRI = 2
 OCTANT_CT = 4
 #plotting constants
@@ -1110,9 +1104,6 @@ def add_noise(mt_projs, SNR=0.95):
     for m, proj in enumerate(mt_projs):
         for t, bin in enumerate(proj):
             mt_projs[m][t] = random.normalvariate(bin, 0.15*(1.0-SNR)*bin)
-
-
-
 
 
 def calcFiniteLines(angles): 
@@ -1135,6 +1126,7 @@ def calcFiniteLines(angles):
                 mValues.append(m)
     
     return (lines, mValues)
+
 
 def createFractal(lines, p, plot=True, ax=plt, title="Fractal"): 
     maxLines = len(lines)   
@@ -1160,6 +1152,7 @@ def createFractal(lines, p, plot=True, ax=plt, title="Fractal"):
             print("title")
     return image
 
+
 def plotFractal(angles, plotReg=True, plotColour=True, ax=plt, title="fractal"): 
     (lines, mValues) = calcFiniteLines(angles)
     fractal = createFractal(lines, p, plot=plotColour, ax=ax, title=title)
@@ -1174,13 +1167,15 @@ def plotFractal(angles, plotReg=True, plotColour=True, ax=plt, title="fractal"):
             
 if __name__ == "__main__": 
     p = nt.nearestPrime(N)
-    angle = farey.farey(3, 7)
-    angle_2 = closest_gaussian_prime(p, angle)    # recon_3(p, NUM_OCTANT_ANGLES, ITERATIONS, MRI_RECON)
-    # plt.show()
-    plt.figure()
-    plotFractal([angle], plotColour=False)
-    plt.figure()
-    plotFractal([angle_2], plotColour=False)
+    plt.figure(figsize=(16, 8))
+    angles_reg, recon, rmses, psnrs, ssims  = regular_recon(p, NUM_OCTANT_ANGLES, ITERATIONS, CT_RECON)
+    angles_rep, recon, rmses, psnrs, ssims  = comp_recplacement_recon(p, NUM_OCTANT_ANGLES, ITERATIONS, CT_RECON)
 
-    # plt.show()
+    plt.figure(figsize=(16, 8))
+    plot_angles(angles_reg, colour="hotpink")
+    plot_angles(angles_rep, colour="limegreen", line="--")
+
+    plt.show()
+
+
 # %%

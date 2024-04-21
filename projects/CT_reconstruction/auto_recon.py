@@ -55,6 +55,15 @@ import random
 matplotlib.use('Qt4Agg')
 import matplotlib.pyplot as plt
 
+#for FBP
+from skimage.io import imread
+from skimage import data_dir
+from skimage.transform import radon, rescale
+from skimage.transform import iradon
+from skimage.transform import iradon_sart
+
+
+
 
 # Monkey patch in fftn and ifftn from pyfftw.interfaces.scipy_fftpack
 fftpack.fft2 = pyfftw.interfaces.scipy_fftpack.fft2
@@ -86,7 +95,7 @@ FIRST_QUAD = 1
 TOP_QUADS = 2
 
 #OSEM params
-s = 12
+s = parameters[3]
 subsetsMode = 1
 K = parameters[0]
 
@@ -111,8 +120,8 @@ MRI_RECON = 1
 CT_RECON = 0
 SNR_CT = 0.95
 SNR_MRI = 40
-NUM_OCTANT_ANGLES = 20 + 1
-ITERATIONS = 4
+NUM_OCTANT_ANGLES = 25 + 1
+ITERATIONS = 500
 OCTANT_MRI = 2
 OCTANT_CT = 4
 LINE_MRI = "--"
@@ -379,6 +388,38 @@ def plot_angles(angles, colour='skyblue', line='-', linewidth=1, label="angles",
         imag, real = farey.get_pq(angle)
         ax.plot([0, real], [0, imag], line, c=colour, linewidth=linewidth, label=label)
 
+# FBP --------------------------------------------------------------------------
+def fbp(p, num_angles):
+    image = imread(data_dir + "/phantom.png", as_grey=True)
+    image = rescale(image, scale = float(p) / 400)
+    theta = np.linspace(0., 180., num_angles, endpoint=True)
+    sinogram = radon(image, theta=theta, circle=True)
+
+    data = {}
+
+    reconstruction_fbp = iradon(sinogram, theta=theta, circle=True)
+    rmse_fbp = np.sqrt(imageio.immse(image, reconstruction_fbp))
+    psnr_fbp = imageio.impsnr(image, reconstruction_fbp)
+    ssim_fbp = imageio.imssim(image.astype(float), reconstruction_fbp.astype(float))
+    data["fbp"] = {"rmse":rmse_fbp, "psnr":psnr_fbp, "ssim":ssim_fbp}
+
+    reconstruction_sart = iradon_sart(sinogram, theta=theta)
+    rmse_sart_1 = np.sqrt(imageio.immse(image, reconstruction_sart))
+    psnr_sart_1 = imageio.impsnr(image, reconstruction_sart)
+    ssim_sart_1 = imageio.imssim(image.astype(float), reconstruction_sart.astype(float))
+    data["sart1"] = {"rmse":rmse_sart_1, "psnr":psnr_sart_1, "ssim":ssim_sart_1}
+
+
+    reconstruction_sart2 = iradon_sart(sinogram, theta=theta,
+                                    image=reconstruction_sart)
+    plt.imshow(reconstruction_sart2)
+    rmse_sart_2 = np.sqrt(imageio.immse(image, reconstruction_sart2))
+    psnr_sart_2 = imageio.impsnr(image, reconstruction_sart2)
+    ssim_sart_2 = imageio.imssim(image.astype(float), reconstruction_sart2.astype(float))
+    data["sart2"] = {"rmse":rmse_sart_2, "psnr":psnr_sart_2, "ssim":ssim_sart_2}
+
+    return rmse_sart_2, psnr_sart_2, ssim_sart_2
+
 
 # Base for CT and MRI reconstructions ------------------------------------------
 def angleSubSets_Symmetric(s, mode, P, Q, octant=1, binLengths=False, K = 1, prime_only = False, max_angles = 10, norm=EUCLID_NORM):
@@ -410,7 +451,13 @@ def angleSubSets_Symmetric(s, mode, P, Q, octant=1, binLengths=False, K = 1, pri
     subsetIndex = 0
     binLengthList = []
 
-    while index < len(sortedVectors) and num_angles < max_angles - 1: # check Katz
+    if max_angles < 0: 
+        print("Katz!")
+        angle_cond = lambda angles, _: not mojette.isKatzCriterion(P, Q, angles, K)
+    else: 
+        angle_cond = lambda _, num_angles: num_angles < max_angles - 1
+
+    while index < len(sortedVectors) and angle_cond(angles, num_angles): # check Katz
     #     index += 1
         angle = sortedVectors[index]
         angles.append(angle)
@@ -455,7 +502,7 @@ def angleSubSets_Symmetric(s, mode, P, Q, octant=1, binLengths=False, K = 1, pri
         if mode == 0:
             subsetIndex += 1
             subsetIndex %= s
-    
+
     if binLengths:
         return angles, subsetAngles, binLengthList
     
@@ -538,7 +585,6 @@ def osem_expand(iterations, p, g_j, os_mValues, projector, backprojector,
 
 
 def recon_CT(p, angles, subsetAngles, iterations, noisy=False): 
-    print("Noise:", noisy)
     lena, mask = imageio.phantom(N, p, True, np.uint32, True)
 
     #convert angles to gradients for OSEM
@@ -549,6 +595,7 @@ def recon_CT(p, angles, subsetAngles, iterations, noisy=False):
             m, inv = farey.toFinite(angle, p)
             mValues.append(m)            
         subsetsMValues.append(mValues)
+    
 
     mt_lena = mojette.transform(lena, angles)
     
@@ -688,7 +735,6 @@ def recon_MRI(p, angles, subsetAngles, iterations, noisy=False):
         mu += len(lines)
     #samples used
     sampleNumber = (p-1)*mu
-
     #-------------
     # Measure finite slice
 
@@ -709,8 +755,6 @@ def recon_MRI(p, angles, subsetAngles, iterations, noisy=False):
 
 
 # base angle set reconstructions -----------------------------------------------
-
-
 def regular_recon(p, num_angles_octant, iterations, recon_type=MRI_RECON, colour="hotpink", line="-", noisy=False):
     """Completes one MRI or CT reconstruction. Plots error info. 
 
@@ -728,13 +772,13 @@ def regular_recon(p, num_angles_octant, iterations, recon_type=MRI_RECON, colour
     num_angles_ct = 2 * (num_angles_mri - 2) #each angle maps to itself and its vertical mirror EXCEPT (0, 1) and (1, 0) 
 
     if recon_type: #MRI RECON
-        num_angles = num_angles_mri
+        num_angles = num_angles_mri if num_angles_octant > 0 else -1
         octant = OCTANT_MRI
         recon = recon_MRI
         path_head = "results_MRI/"
         title = "MRI reconstruction"
     else: #CT RECON
-        num_angles = num_angles_ct
+        num_angles = num_angles_ct if num_angles_octant > 0 else -1
         octant = OCTANT_CT
         recon = recon_CT
         path_head = "results_CT/"
@@ -867,7 +911,120 @@ def comp_recplacement_recon(p, num_angles_octant, iterations, num_to_store=20, r
     return angles, recon_im, rmses, psnrs, ssims
 
 
+#fractal functions -------------------------------------------------------------
+def calcFiniteLines(angles): 
+    powerSpect = np.zeros((p,p))
+    centreed = True
+    lines = []
+    mValues = []
+
+    for angle in angles:
+        m, inv = farey.toFinite(angle, p)
+        u, v = radon.getSliceCoordinates2(m, powerSpect, centreed, p)
+        lines.append((u,v))
+        mValues.append(m)
+        #second quadrant
+        if twoQuads:
+            if m != 0 and m != p: #dont repeat these
+                m = p-m
+                u, v = radon.getSliceCoordinates2(m, powerSpect, centreed, p)
+                lines.append((u,v))
+                mValues.append(m)
+    
+    return (lines, mValues)
+
+
+def createFractal(lines, p): 
+    powerSpect = np.zeros((p,p))
+    fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(16, 8))
+
+    plt.gray()
+    plt.tight_layout()
+
+    maxLines = len(lines)
+    #maxLines = 12
+    ax[0].imshow(powerSpect)
+    ax[1].imshow(powerSpect)
+    #color=iter(cm.rainbow(np.linspace(0,1,len(lines))))
+    color=iter(plt.cm.jet(np.linspace(0,1,maxLines+1)))
+    fareyImage = np.zeros_like(powerSpect)
+    for i, line in enumerate(lines):
+        u, v = line
+        c=next(color)
+        ax[0].plot(u, v, '.', c=c)
+        ax[1].plot(u, v, '.r',markersize=1)
+        fareyImage[u,v] = 255
+        if i == maxLines:
+            break
+    ax[0].set_title('Sampling (colour per line) for prime size:'+str(p))
+    ax[1].set_title('Sampling (same colour per line) for prime size:'+str(p))
+
+
+def plotFractal(angles, recon_type, title="fractal", num_to_store=0): 
+    lines, mValues = calcFiniteLines(angles)
+    createFractal(lines, p)
+    path = "result_" + ("MRI" if recon_type else "CT") + '/'
+    path += "recon_3/num_to_store_" + str(num_to_store) + ".png"
+    plt.savefig(path)
+
+
 # reconstructions --------------------------------------------------------------
+def recon_neg_2(p): 
+    data = {}
+    
+    num_angles = 25
+    angles, subsetAngles = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=OCTANT_CT,K=K, max_angles=num_angles)  
+    recon_im, rmses, psnrs, ssims = recon_CT(p, angles, remove_empty(subsetAngles), 300, False)
+    rmse, psnr, ssim = fbp(p, num_angles)
+
+    while psnrs[-1] < psnr and num_angles < 300:
+        num_angles += 25
+        angles, subsetAngles = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=OCTANT_CT,K=K, max_angles=num_angles)  
+        recon_im, rmses, psnrs, ssims = recon_CT(p, angles, remove_empty(subsetAngles), 300, False)
+        rmse, psnr, ssim = fbp(p, num_angles)
+
+    data["no noise"] = {"rmses": rmses, "psnrs": psnrs, "ssims": ssims}
+    data["FBP"] = {"rmses": rmse, "psnrs": psnr, "ssims": ssim}
+
+    plot_recon(rmses, psnrs, ssims, colour="hotpink", line="-", label="not noisy recon, " + str(num_angles) + " projections")
+
+    recon_im, rmses, psnrs, ssims = recon_CT(p, angles, remove_empty(subsetAngles), 300, True)
+    plot_recon(rmses, psnrs, ssims, colour="skyblue", line="--", label="noisy recon, " + str(num_angles) + " projections")
+    data["noise"] = {"rmses": rmses, "psnrs": psnrs, "ssims": ssims}
+
+    rmses = rmse * np.ones_like(rmses)
+    psnrs = psnr * np.ones_like(psnrs)
+    ssims = ssim * np.ones_like(ssims)
+    plot_recon(rmses, psnrs, ssims, colour="mediumpurple", line="-", label="FBP, " + str(num_angles) + " projections")
+    np.savez(file="results_CT/results_neg_2/FBP_ChaoS_num_angles_" + str(num_angles) + ".npz", data=data)
+
+
+def recon_neg_1(p, iterations):
+    """ 
+
+    Args:
+        p (int): prime size of image
+        num_angles_octant (int): number of angles per octant
+        iterations (int): number of OSEM iterations
+        recon (int, optional): Specificy MRI recon (=1) or CT recon (=0). 
+        Defaults to 0.
+        colour (str, optional): Colour of plot. Defaults to "hotpink".
+    """
+    num_angles = 257
+    octant = OCTANT_CT
+    recon = recon_CT
+    path_head = "results_CT/"
+    title = "CT reconstruction"
+
+    angles, subsetAngles = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=octant,K=K, max_angles=num_angles)  
+
+    recon_im, rmses, psnrs, ssims = recon(p, angles, remove_empty(subsetAngles), iterations, noisy=True)
+    plot_recon(rmses, psnrs, ssims, colour="hotpink", line="-", label="ChaoS not noisy recon, " + str(num_angles) + " projections")
+
+    recon_im, rmses, psnrs, ssims = recon(p, angles, remove_empty(subsetAngles), iterations, noisy=False)
+    plot_recon(rmses, psnrs, ssims, colour="skyblue", line="-", label="ChaoS noisy recon, " + str(num_angles) + " projections")
+
+
 def recon_0(p, num_angles_octant, iterations, noisy=False):
     """Completes reconstruction of MRI and CT for same parameters. Plots error info. 
 
@@ -879,18 +1036,19 @@ def recon_0(p, num_angles_octant, iterations, noisy=False):
         Defaults to 0.
         colour (str, optional): Colour of plot. Defaults to "hotpink".
     """
-    data = {}
+    data = {}    
     angles, recon, rmses, psnrs, ssims = regular_recon(p, num_angles_octant, iterations, recon_type=MRI_RECON, colour="skyblue", line="--", noisy=noisy)
-    angles, recon, rmses, psnrs, ssims = regular_recon(p, num_angles_octant, iterations, recon_type=CT_RECON, colour="hotpink", line="-", noisy=noisy)
     data["regular"] = {"angles": angles, "recon": recon, "rmse": rmses, "psnr": psnrs, "ssim": ssims, "noise":noisy}
     path = get_path(MRI_RECON, 0, num_angles_octant, ITERATIONS, noisy)
+    print("num MRI angles:", len(angles))
     np.savez(file=path, data=data)
 
     data = {}
     angles, recon, rmses, psnrs, ssims = regular_recon(p, num_angles_octant, iterations, recon_type=CT_RECON, colour="hotpink", line="-", noisy=noisy)
     data["regular"] = {"angles": angles, "recon": recon, "rmse": rmses, "psnr": psnrs, "ssim": ssims, "noise":noisy}
     path = get_path(CT_RECON, 0, num_angles_octant, ITERATIONS, noisy)
-    np.savez(file=path, data=data)
+    print("num CT angles:", len(angles))
+    # np.savez(file=path, data=data)
 
 
 def recon_1(p, num_angles_octant, iterations, recon_type=MRI_RECON, noisy=False): 
@@ -1017,17 +1175,20 @@ def recon_1b(p, iterations, recon_type=MRI_RECON, noisy=False):
     """
     data = {"regular":{}, "prime":{}}
     octant_angles = [10, 20, 25, 30, 40, 50, 60, 70, 75, 80, 90, 100]
+
+    plt.figure(figsize=(16, 8))
     colour = iter(plt.cm.gist_rainbow(np.linspace(0,1, 2 * len(octant_angles) + 1)))
 
     for num_angles in octant_angles: 
-        angles, rmses, psnrs, ssims = regular_recon(p, num_angles, iterations, recon_type, colour=next(colour), noisy=noisy)
-        data["regular"][num_angles] = {"angles": angles, "rmse": rmses, "psnr": psnrs, "ssim": ssims, "noise":noisy}
+        angles, recon_im, rmses, psnrs, ssims = regular_recon(p, num_angles, iterations, recon_type, colour=next(colour), noisy=noisy)
+        data["regular"][num_angles] = {"angles": angles, "recon": recon_im, "rmse": rmses, "psnr": psnrs, "ssim": ssims, "noise":noisy}
 
-        angles, rmses, psnrs, ssims = prime_recon(p, num_angles, iterations, recon_type, colour=next(colour), noisy=noisy)
-        data["prime"][num_angles] = {"angles": angles, "rmse": rmses, "psnr": psnrs, "ssim": ssims, "noise":noisy}
+        angles, recon_im, rmses, psnrs, ssims = prime_recon(p, num_angles, iterations, recon_type, colour=next(colour), noisy=noisy)
+        data["prime"][num_angles] = {"angles": angles, "recon": recon_im, "rmse": rmses, "psnr": psnrs, "ssim": ssims, "noise":noisy}
 
-    path = "results_ct/recon_1/recon_1b/many_angle_its_" + str(iterations) + ".npz"
-    np.savez(file=path, data=data)
+    path = "results_CT/recon_1/recon_1b/many_angle_its_" + str(iterations) 
+    np.savez(file=path + ".npz", data=data)
+    plt.savefig(path + ".png")
 
     
 # plotters ---------------------------------------------------------------------
@@ -1056,6 +1217,31 @@ def plot_recon(rmseValues, psnrValues, ssimValues, colour = "b", line = '-', lab
     plt.legend()
 
 
+def plot_recon_1b(): 
+    """Plots reg and prime recons for increasing number of angles for octant. 
+    """
+    path = "results_CT/recon_1/recon_1b/many_angle_its_500.npz"
+    data = np.load(path)["data"].item()
+    reg_recon_info = data["regular"]
+    prime_recon_info = data["prime"]
+
+    octant_angles = reg_recon_info.keys()
+    octant_angles = [10, 20, 30, 40, 100]
+
+    colour = iter(plt.cm.gist_rainbow(np.linspace(0,1, len(octant_angles) + 1)))
+
+    for num_angles in octant_angles: 
+        c = next(colour)
+
+        reg_recon = reg_recon_info[num_angles]
+        plot_recon(reg_recon["rmse"], reg_recon["psnr"], reg_recon["ssim"], 
+                   colour = c, label="reg, " + str(num_angles) + " projs")
+
+        prime_recon = prime_recon_info[num_angles]
+        plot_recon(prime_recon["rmse"], prime_recon["psnr"], prime_recon["ssim"], 
+                   colour = c, line="--", label="prime, " + str(num_angles) + " projs")
+    
+
 def plot_recon_2(path, plot_angle=True, plot_type=True):
     data = np.load(path)["data_MRI"].item()
     equiv_class_types = [1, 2, 4]
@@ -1077,75 +1263,69 @@ def plot_recon_2(path, plot_angle=True, plot_type=True):
 
     plt.show()
 
+ 
+# questions and new ------------------------------------------------------------
+
+def ct_katz(p, iterations, noisy=False):
+    """Completes reconstruction of MRI and CT for same parameters. Plots error info. 
+
+    Args:
+        p (int): prime size of image
+        num_angles_octant (int): number of angles per octant
+        iterations (int): number of OSEM iterations
+        recon (int, optional): Specificy MRI recon (=1) or CT recon (=0). 
+        Defaults to 0.
+        colour (str, optional): Colour of plot. Defaults to "hotpink".
+    """
+    angles, subsetAngles = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=OCTANT_CT,K=K, max_angles=62)  
+    recon_im, rmses, psnrs, ssims = recon_CT(p, angles, remove_empty(subsetAngles), iterations, noisy)
+    plot_recon(rmses, psnrs, ssims, colour="hotpink", label="regular recon, " + str(len(angles)) + " projections")
+
+    angles, subsetAngles = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=OCTANT_CT,K=K, max_angles=62, prime_only=True)  
+    recon_im, rmses, psnrs, ssims = recon_CT(p, angles, remove_empty(subsetAngles), iterations, noisy)
+    plot_recon(rmses, psnrs, ssims, colour="skyblue", label="prime recon, " + str(len(angles)) + " projections")
+    # plt.suptitle(title)
+
 
 #Shes a runner shes a track star -----------------------------------------------
-
-
-# noise from shakes ------------------------------------------------------------
-
-
-
-def calcFiniteLines(angles): 
-    powerSpect = np.zeros((p,p))
-    centreed = True
-    lines = []
-    mValues = []
-
-    for angle in angles:
-        m, inv = farey.toFinite(angle, p)
-        u, v = radon.getSliceCoordinates2(m, powerSpect, centreed, p)
-        lines.append((u,v))
-        mValues.append(m)
-        #second quadrant
-        if twoQuads:
-            if m != 0 and m != p: #dont repeat these
-                m = p-m
-                u, v = radon.getSliceCoordinates2(m, powerSpect, centreed, p)
-                lines.append((u,v))
-                mValues.append(m)
-    
-    return (lines, mValues)
-
-
-def createFractal(lines, p, plot=True, ax=plt, title="Fractal"): 
-    maxLines = len(lines)   
-    color=iter(plt.cm.jet(np.linspace(0,1,maxLines+1)))
-    image = np.zeros((p,p))
-
-    for i, line in enumerate(lines):
-        u, v = line
-        c=next(color)
-        if plot: 
-            ax.plot(u, v, '.', markersize=1, c=c)
-
-        image[u,v] = 1
-
-        if i == maxLines:
-            break 
-
-    if plot: 
-        try:
-            ax.set_title(title)
-        except AttributeError:
-            ax.title(title)
-            print("title")
-    return image
-
-
-def plotFractal(angles, plotReg=True, plotColour=True, ax=plt, title="fractal"): 
-    (lines, mValues) = calcFiniteLines(angles)
-    fractal = createFractal(lines, p, plot=plotColour, ax=ax, title=title)
-    if plotReg: 
-        if plotColour: 
-            plt.figure()
-        plt.imshow(fractal)
-    return fractal
-
-
-
-            
 if __name__ == "__main__": 
     p = nt.nearestPrime(N)
-    recon_2(p, NUM_OCTANT_ANGLES, ITERATIONS, CT_RECON)
+
+    recon_neg_2(p)
+
+    plt.figure(figsize=(16, 8))
+    recon_neg_1(p, ITERATIONS)
+
+    for num_angles in [25, 50, 75, 100]: 
+        plt.figure(figsize=(16, 8))
+        recon_1(p, num_angles, ITERATIONS, CT_RECON, False)
+
+        plt.figure(figsize=(16, 8))
+        recon_1(p, num_angles, ITERATIONS, CT_RECON, True)
+
+    plt.figure(figsize=(16, 8))
+    recon_2(p, NUM_OCTANT_ANGLES, ITERATIONS, CT_RECON, noisy=False)
+
+    plt.figure(figsize=(16, 8))
+    recon_2(p, NUM_OCTANT_ANGLES, ITERATIONS, CT_RECON, noisy=True)
+
     plt.show()
+
+
+
+
+    # ct_katz(p, ITERATIONS, False)
+
+    # path = "results_CT/recon_2/num_angles_78_its_500_noise_False.npz"
+    # data = np.load(path)["data"].item()
+    # print(data.keys())
+
+
+    # recon_1b(p, ITERATIONS, CT_RECON, noisy=False)
+    # plt.figure(figsize=(16, 8))
+    # recon_2(p, NUM_OCTANT_ANGLES, ITERATIONS, CT_RECON, noisy=False)
+    # plt.figure(figsize=(16, 8))
+    # recon_3(p, NUM_OCTANT_ANGLES, ITERATIONS, CT_RECON, noisy=False)
+    # plt.show()
     
+# %%

@@ -569,7 +569,7 @@ def osem_expand(iterations, p, g_j, os_mValues, projector, backprojector,
                 # print("Smooth Median")
                 fReal = ndimage.median_filter(np.real(f), 3)
                 # fImag = ndimage.median_filter(np.imag(f), 3)
-            f = fReal #+1j*fImag
+                f = fReal #+1j*fImag
             
         if i%plotIncrement == 0:
             img = imageio.immask(image, mask, N, N)
@@ -1227,16 +1227,16 @@ def plot_recon(rmseValues, psnrValues, ssimValues, colour = "b", line = '-', lab
     plt.legend()
 
 
-def plot_neg_2(path): 
+def plot_neg_2(path, num_angles): 
     data = np.load(path)["data"].item()
 
     #plot errors
     plt.figure(figsize=(16, 8))
     plot_recon(data["no noise"]["rmse"], data["no noise"]["psnr"], data["no noise"]["ssim"], label="ChoaS no noise", colour="hotpink")
     plot_recon(data["noise"]["rmse"], data["noise"]["psnr"], data["noise"]["ssim"], label="ChoaS noise", colour="hotpink", line='--')
-    # plot_recon(data["FBP no noise"]["rmse"], data["FBP no noise"]["psnr"], data["FBP no noise"]["ssim"], label="FBP no noise", colour="mediumpurple")
+    plot_recon(data["FBP no noise"]["rmse"], data["FBP no noise"]["psnr"], data["FBP no noise"]["ssim"], label="FBP no noise", colour="mediumpurple")
     plot_recon(data["FBP noise"]["rmse"], data["FBP noise"]["psnr"], data["FBP noise"]["ssim"], label="FBP noise", colour="mediumpurple", line='--')
-
+    plt.suptitle("num projs: " + str(num_angles))
 
     #plot recons
     recon_im = data["no noise"]["recon"]
@@ -1248,7 +1248,7 @@ def plot_neg_2(path):
     lena_fbp = imread(data_dir + "/phantom.png", as_grey=True)
     lena_fbp = rescale(lena_fbp, scale = float(p) / 400, mode='constant')
 
-    fig, axs = plt.subplots(2, 4, figsize=(18, 12), sharex=True, sharey=True)
+    fig, axs = plt.subplots(2, 4, figsize=(18, 12))#, sharey=True)
     axs = axs.flat
     axs[0].imshow(recon_im, cmap="gray")
     axs[1].imshow(abs(recon_im - lena), cmap="gray")
@@ -1258,6 +1258,7 @@ def plot_neg_2(path):
     axs[5].imshow(abs(recon_im_fbp - lena_fbp), cmap="gray")
     axs[6].imshow(recon_im_fbp_noisy, cmap="gray")
     axs[7].imshow(abs(recon_im_fbp_noisy - lena_fbp), cmap="gray")
+    plt.suptitle("num projs: " + str(num_angles))
 
 
 def plot_recon_1b(): 
@@ -1329,18 +1330,36 @@ def ct_katz(p, iterations, noisy=False):
     plot_recon(rmses, psnrs, ssims, colour="skyblue", label="prime recon, " + str(len(angles)) + " projections")
     # plt.suptitle(title)
 
+#exps --------------------------------------------------------------------------
+def exp_0():
+    # p = nt.nearestPrime(N)
+    # recon_neg_2(p, 300, p)
+
+    path = "results_CT/recon_neg_2/FBP_ChaoS_num_angles_{}.npz".format(p)
+    plot_neg_2(path, p)
+
+def exp_1(): 
+    p = nt.nearestPrime(N)
+    its = 300
+
+    for num_angle in [25, 50, 75, 100, 125]: 
+        plt.figure(figsize=(16, 8))
+        recon_neg_2(p, its, num_angle)
+
+    for num_angle in [25, 50, 75, 100, 125]: 
+        path = "results_CT/recon_neg_2/FBP_ChaoS_num_angles_{}.npz".format(num_angle)
+        plot_neg_2(path, num_angle)
+
 
 #Shes a runner shes a track star -----------------------------------------------
 if __name__ == "__main__": 
     p = nt.nearestPrime(N)
-
-    # for num_angle in [25, 50, 75, 100, 125]: 
-    #     plt.figure(figsize=(16, 8))
-    #     recon_neg_2(p, 300, num_angle)
-
-    for num_angle in [25, 50, 75, 100, 125]: 
-        path = "results_CT/recon_neg_2/FBP_ChaoS_num_angles_{}.npz".format(num_angle)
-        plot_neg_2(path)
+    color=["hotpink", "mediumpurple", "skyblue"]
+    for i, smoothIncrement in enumerate([5, 10, 20]): 
+        angles, subsetAngles = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=OCTANT_CT,K=K, max_angles=-1)  
+        recon_im, rmses, psnrs, ssims = recon_CT(p, angles, remove_empty(subsetAngles), 300, False)
+        plot_recon(rmses, psnrs, ssims, colour=color[i], label="recon mode " + str(x) )
+    # recon_1(p, num_angles_octant, iterations, recon_type=MRI_RECON, noisy=False)
 
     # plt.figure(figsize=(16, 8))
     # recon_neg_1(p, ITERATIONS)
@@ -1377,4 +1396,3 @@ if __name__ == "__main__":
     # recon_3(p, NUM_OCTANT_ANGLES, ITERATIONS, CT_RECON, noisy=False)
     # plt.show()
     
-# %%

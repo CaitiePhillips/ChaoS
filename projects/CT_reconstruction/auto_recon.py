@@ -391,11 +391,14 @@ def plot_angles(angles, colour='skyblue', line='-', linewidth=1, label="angles",
         ax.plot([0, real], [0, imag], line, c=colour, linewidth=linewidth, label=label)
 
 # FBP --------------------------------------------------------------------------
-def fbp(p, num_angles):
+def fbp(p, num_angles, noisy=False):
     image = imread(data_dir + "/phantom.png", as_grey=True)
-    image = rescale(image, scale = float(p) / 400)
+    image = rescale(image, scale = float(p) / 400, mode='constant')
     theta = np.linspace(0., 180., num_angles, endpoint=True)
     sinogram = radon(image, theta=theta, circle=True)
+
+    if noisy: 
+        add_noise(sinogram, snr=SNR_CT)
 
     data = {}
 
@@ -414,13 +417,12 @@ def fbp(p, num_angles):
 
     reconstruction_sart2 = iradon_sart(sinogram, theta=theta,
                                     image=reconstruction_sart)
-    plt.imshow(reconstruction_sart2)
     rmse_sart_2 = np.sqrt(imageio.immse(image, reconstruction_sart2))
     psnr_sart_2 = imageio.impsnr(image, reconstruction_sart2)
     ssim_sart_2 = imageio.imssim(image.astype(float), reconstruction_sart2.astype(float))
     data["sart2"] = {"rmse":rmse_sart_2, "psnr":psnr_sart_2, "ssim":ssim_sart_2}
 
-    return rmse_sart_2, psnr_sart_2, ssim_sart_2
+    return reconstruction_sart2, rmse_sart_2, psnr_sart_2, ssim_sart_2
 
 
 # Base for CT and MRI reconstructions ------------------------------------------
@@ -569,7 +571,7 @@ def osem_expand(iterations, p, g_j, os_mValues, projector, backprojector,
                 # print("Smooth Median")
                 fReal = ndimage.median_filter(np.real(f), 3)
                 # fImag = ndimage.median_filter(np.imag(f), 3)
-            f = fReal #+1j*fImag
+                f = fReal #+1j*fImag
             
         if i%plotIncrement == 0:
             img = imageio.immask(image, mask, N, N)
@@ -973,34 +975,42 @@ def plotFractal(angles, recon_type, title="fractal", num_to_store=0):
 
 
 # reconstructions --------------------------------------------------------------
-def recon_neg_2(p): 
+def recon_neg_2(p, iterations, num_angles): 
+    """Reconstructs images via ChaoS and FBP for a comparrison of the two methods. 
+    Reconstructs methods with and without noise. Saves reconstruction and errors. 
+    To reconstruct, see plot_neg_2. 
+
+    Args:
+        p (int): prime size of image
+        num_angles_octant (int): number of angles per octant
+        iterations (int): number of OSEM iterations
+    """
     data = {}
-    
-    num_angles = 25
-    angles, subsetAngles = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=OCTANT_CT,K=K, max_angles=num_angles)  
-    recon_im, rmses, psnrs, ssims = recon_CT(p, angles, remove_empty(subsetAngles), 300, False)
-    rmse, psnr, ssim = fbp(p, num_angles)
+    angles, subsetAngles = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=OCTANT_CT,K=K, max_angles=num_angles) 
 
-    while psnrs[-1] < psnr and num_angles < 300:
-        num_angles += 25
-        angles, subsetAngles = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=OCTANT_CT,K=K, max_angles=num_angles)  
-        recon_im, rmses, psnrs, ssims = recon_CT(p, angles, remove_empty(subsetAngles), 300, False)
-        rmse, psnr, ssim = fbp(p, num_angles)
+    recon_im, rmses, psnrs, ssims = recon_CT(p, angles, remove_empty(subsetAngles), iterations, False)
+    data["no noise"] = {"recon": recon_im, "rmse": rmses, "psnr": psnrs, "ssim": ssims}
+    # plot_recon(rmses, psnrs, ssims, colour="hotpink", line="-", label="not noisy recon, " + str(num_angles) + " projections")
 
-    data["no noise"] = {"rmses": rmses, "psnrs": psnrs, "ssims": ssims}
-    data["FBP"] = {"rmses": rmse, "psnrs": psnr, "ssims": ssim}
+    recon_im_noisy, rmses, psnrs, ssims = recon_CT(p, angles, remove_empty(subsetAngles), iterations, True)
+    # plot_recon(rmses, psnrs, ssims, colour="skyblue", line="--", label="noisy recon, " + str(num_angles) + " projections")
+    data["noise"] = {"recon": recon_im_noisy, "rmse": rmses, "psnr": psnrs, "ssim": ssims}
 
-    plot_recon(rmses, psnrs, ssims, colour="hotpink", line="-", label="not noisy recon, " + str(num_angles) + " projections")
 
-    recon_im, rmses, psnrs, ssims = recon_CT(p, angles, remove_empty(subsetAngles), 300, True)
-    plot_recon(rmses, psnrs, ssims, colour="skyblue", line="--", label="noisy recon, " + str(num_angles) + " projections")
-    data["noise"] = {"rmses": rmses, "psnrs": psnrs, "ssims": ssims}
-
+    recon_im_fbp, rmse, psnr, ssim = fbp(p, num_angles)
     rmses = rmse * np.ones_like(rmses)
     psnrs = psnr * np.ones_like(psnrs)
     ssims = ssim * np.ones_like(ssims)
-    plot_recon(rmses, psnrs, ssims, colour="mediumpurple", line="-", label="FBP, " + str(num_angles) + " projections")
-    np.savez(file="results_CT/results_neg_2/FBP_ChaoS_num_angles_" + str(num_angles) + ".npz", data=data)
+    data["FBP no noise"] = {"recon": recon_im_fbp, "rmse": rmses, "psnr": psnrs, "ssim": ssims}
+
+    recon_im_fbp_noisy, rmse, psnr, ssim = fbp(p, num_angles, noisy=True)
+    rmses = rmse * np.ones_like(rmses)
+    psnrs = psnr * np.ones_like(psnrs)
+    ssims = ssim * np.ones_like(ssims)
+    data["FBP noise"] = {"recon": recon_im_fbp_noisy, "rmse": rmses, "psnr": psnrs, "ssim": ssims}
+
+
+    np.savez(file="results_CT/recon_neg_2/FBP_ChaoS_num_angles_" + str(num_angles) + ".npz", data=data)
 
 
 def recon_neg_1(p, iterations):
@@ -1221,6 +1231,40 @@ def plot_recon(rmseValues, psnrValues, ssimValues, colour = "b", line = '-', lab
     plt.legend()
 
 
+def plot_neg_2(path, num_angles): 
+    data = np.load(path)["data"].item()
+
+    #plot errors
+    plt.figure(figsize=(16, 8))
+    plot_recon(data["no noise"]["rmse"], data["no noise"]["psnr"], data["no noise"]["ssim"], label="ChoaS no noise", colour="hotpink")
+    plot_recon(data["noise"]["rmse"], data["noise"]["psnr"], data["noise"]["ssim"], label="ChoaS noise", colour="hotpink", line='--')
+    plot_recon(data["FBP no noise"]["rmse"], data["FBP no noise"]["psnr"], data["FBP no noise"]["ssim"], label="FBP no noise", colour="mediumpurple")
+    plot_recon(data["FBP noise"]["rmse"], data["FBP noise"]["psnr"], data["FBP noise"]["ssim"], label="FBP noise", colour="mediumpurple", line='--')
+    plt.suptitle("num projs: " + str(num_angles))
+
+    #plot recons
+    recon_im = data["no noise"]["recon"]
+    recon_im_noisy = data["noise"]["recon"]
+    recon_im_fbp = data["FBP no noise"]["recon"]
+    recon_im_fbp_noisy = data["FBP noise"]["recon"]
+
+    lena, mask = imageio.phantom(N, p, True, np.uint32, True)
+    lena_fbp = imread(data_dir + "/phantom.png", as_grey=True)
+    lena_fbp = rescale(lena_fbp, scale = float(p) / 400, mode='constant')
+
+    fig, axs = plt.subplots(2, 4, figsize=(18, 12))#, sharey=True)
+    axs = axs.flat
+    axs[0].imshow(recon_im, cmap="gray")
+    axs[1].imshow(abs(recon_im - lena), cmap="gray")
+    axs[2].imshow(recon_im, cmap="gray")
+    axs[3].imshow(abs(recon_im_noisy - lena), cmap="gray")
+    axs[4].imshow(recon_im_fbp, cmap="gray")
+    axs[5].imshow(abs(recon_im_fbp - lena_fbp), cmap="gray")
+    axs[6].imshow(recon_im_fbp_noisy, cmap="gray")
+    axs[7].imshow(abs(recon_im_fbp_noisy - lena_fbp), cmap="gray")
+    plt.suptitle("num projs: " + str(num_angles))
+
+
 def plot_recon_1b(): 
     """Plots reg and prime recons for increasing number of angles for octant. 
     """
@@ -1290,25 +1334,52 @@ def ct_katz(p, iterations, noisy=False):
     plot_recon(rmses, psnrs, ssims, colour="skyblue", label="prime recon, " + str(len(angles)) + " projections")
     # plt.suptitle(title)
 
+#exps --------------------------------------------------------------------------
+def exp_0():
+    # p = nt.nearestPrime(N)
+    # recon_neg_2(p, 300, p)
+
+    path = "results_CT/recon_neg_2/FBP_ChaoS_num_angles_{}.npz".format(p)
+    plot_neg_2(path, p)
+
+def exp_1(): 
+    p = nt.nearestPrime(N)
+    its = 300
+
+    for num_angle in [25, 50, 75, 100, 125]: 
+        plt.figure(figsize=(16, 8))
+        recon_neg_2(p, its, num_angle)
+
+    for num_angle in [25, 50, 75, 100, 125]: 
+        path = "results_CT/recon_neg_2/FBP_ChaoS_num_angles_{}.npz".format(num_angle)
+        plot_neg_2(path, num_angle)
+
 
 #Shes a runner shes a track star -----------------------------------------------
 if __name__ == "__main__": 
     p = nt.nearestPrime(N)
-    plt.figure(figsize=(16, 8))
-    colour = iter(plt.cm.gist_rainbow(np.linspace(0,1, 5 + 1)))
-    for k in [0.2, 0.4, 0.6, 1, 1.2]:
-        regular_recon(p, -1, 400, CT_RECON, colour=next(colour), line="-", noisy=False, K=k)
-    plt.savefig("k_vals.png")
+    color=["hotpink", "mediumpurple", "skyblue"]
+    for i, smoothIncrement in enumerate([5, 10, 20]): 
+        angles, subsetAngles = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=OCTANT_CT,K=K, max_angles=-1)  
+        recon_im, rmses, psnrs, ssims = recon_CT(p, angles, remove_empty(subsetAngles), 300, False)
+        plot_recon(rmses, psnrs, ssims, colour=color[i], label="recon mode " + str(x) )
+    # recon_1(p, num_angles_octant, iterations, recon_type=MRI_RECON, noisy=False)
 
- 
-    # parameters = [0.4, 1, 100, 12, 12.0] #r=4
-    # regular_recon(p, NUM_OCTANT_ANGLES, 760, CT_RECON)
+    # plt.figure(figsize=(16, 8))
+    # recon_neg_1(p, ITERATIONS)
 
-    # parameters = [0.4, 1, 100, 12, 1.0] #r=4
-    # regular_recon(p, NUM_OCTANT_ANGLES, 760, CT_RECON)
+    # for num_angles in [25, 50, 75, 100]: 
+    #     plt.figure(figsize=(16, 8))
+    #     recon_1(p, num_angles, ITERATIONS, CT_RECON, False)
 
-    # parameters = [0.4, 1, 100, 12, 24.0] #r=4
-    # regular_recon(p, NUM_OCTANT_ANGLES, 760, CT_RECON)
+    #     plt.figure(figsize=(16, 8))
+    #     recon_1(p, num_angles, ITERATIONS, CT_RECON, True)
+
+    # plt.figure(figsize=(16, 8))
+    # recon_2(p, NUM_OCTANT_ANGLES, ITERATIONS, CT_RECON, noisy=False)
+
+    # plt.figure(figsize=(16, 8))
+    # recon_2(p, NUM_OCTANT_ANGLES, ITERATIONS, CT_RECON, noisy=True)
 
     plt.show()
 
@@ -1349,4 +1420,3 @@ if __name__ == "__main__":
     # recon_3(p, NUM_OCTANT_ANGLES, ITERATIONS, CT_RECON, noisy=False)
     # plt.show()
     
-# %%

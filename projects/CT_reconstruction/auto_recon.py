@@ -78,7 +78,9 @@ pyfftw.interfaces.cache.enable()
 #parameter sets (K, k, i, s, h)
 #phantom
 #parameters = [1.2, 1, 381, 30, 8.0] #r=2
+# parameters = [0.4, 1, 100, 12, 12.0] #r=4
 parameters = [0.4, 1, 100, 12, 12.0] #r=4
+
 #cameraman
 #parameters = [1.2, 1, 381, 30, 8.0] #r=2
 
@@ -108,7 +110,7 @@ plotCroppedImages = True
 plotColourBar = True
 plotIncrement = 2
 smoothReconMode = 2 #0-None,1-TV,2-NL,3-Median
-smoothIncrement = 10
+smoothIncrement = 5
 smoothMaxIteration = iterations/2
 relaxIterationFactor = int(0.01*iterations)
 #smoothMaxIteration2 = iterations-1
@@ -755,7 +757,7 @@ def recon_MRI(p, angles, subsetAngles, iterations, noisy=False):
 
 
 # base angle set reconstructions -----------------------------------------------
-def regular_recon(p, num_angles_octant, iterations, recon_type=MRI_RECON, colour="hotpink", line="-", noisy=False):
+def regular_recon(p, num_angles_octant, iterations, recon_type=MRI_RECON, colour="hotpink", line="-", noisy=False, s=12, K=0.4):
     """Completes one MRI or CT reconstruction. Plots error info. 
 
     Args:
@@ -787,7 +789,9 @@ def regular_recon(p, num_angles_octant, iterations, recon_type=MRI_RECON, colour
     angles, subsetAngles = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=octant,K=K, max_angles=num_angles)  
 
     recon_im, rmses, psnrs, ssims = recon(p, angles, remove_empty(subsetAngles), iterations, noisy)
-    plot_recon(rmses, psnrs, ssims, colour=colour, line=line, label="regular recon, " + str(num_angles_ct) + " projections")
+    # plot_recon(rmses, psnrs, ssims, colour=colour, line=line, label="regular recon, " + str(num_angles_ct) + " projections") #normal
+    plot_recon(rmses, psnrs, ssims, colour=colour, line=line, label="s= " + str(s) + " K=" + str(K)) #testing s vals
+
     # plt.suptitle(title)
 
     return angles, recon_im, rmses, psnrs, ssims
@@ -1290,26 +1294,43 @@ def ct_katz(p, iterations, noisy=False):
 #Shes a runner shes a track star -----------------------------------------------
 if __name__ == "__main__": 
     p = nt.nearestPrime(N)
-
-    recon_neg_2(p)
-
     plt.figure(figsize=(16, 8))
-    recon_neg_1(p, ITERATIONS)
+    colour = iter(plt.cm.gist_rainbow(np.linspace(0,1, 5 + 1)))
+    for k in [0.2, 0.4, 0.6, 1, 1.2]:
+        regular_recon(p, -1, 400, CT_RECON, colour=next(colour), line="-", noisy=False, K=k)
+    plt.savefig("k_vals.png")
 
-    for num_angles in [25, 50, 75, 100]: 
-        plt.figure(figsize=(16, 8))
-        recon_1(p, num_angles, ITERATIONS, CT_RECON, False)
+ 
+    # parameters = [0.4, 1, 100, 12, 12.0] #r=4
+    # regular_recon(p, NUM_OCTANT_ANGLES, 760, CT_RECON)
 
-        plt.figure(figsize=(16, 8))
-        recon_1(p, num_angles, ITERATIONS, CT_RECON, True)
+    # parameters = [0.4, 1, 100, 12, 1.0] #r=4
+    # regular_recon(p, NUM_OCTANT_ANGLES, 760, CT_RECON)
 
-    plt.figure(figsize=(16, 8))
-    recon_2(p, NUM_OCTANT_ANGLES, ITERATIONS, CT_RECON, noisy=False)
-
-    plt.figure(figsize=(16, 8))
-    recon_2(p, NUM_OCTANT_ANGLES, ITERATIONS, CT_RECON, noisy=True)
+    # parameters = [0.4, 1, 100, 12, 24.0] #r=4
+    # regular_recon(p, NUM_OCTANT_ANGLES, 760, CT_RECON)
 
     plt.show()
+
+    # recon_neg_2(p)
+
+    # plt.figure(figsize=(16, 8))
+    # recon_neg_1(p, ITERATIONS)
+
+    # for num_angles in [25, 50, 75, 100]: 
+    #     plt.figure(figsize=(16, 8))
+    #     recon_1(p, num_angles, ITERATIONS, CT_RECON, False)
+
+    #     plt.figure(figsize=(16, 8))
+    #     recon_1(p, num_angles, ITERATIONS, CT_RECON, True)
+
+    # plt.figure(figsize=(16, 8))
+    # recon_2(p, NUM_OCTANT_ANGLES, ITERATIONS, CT_RECON, noisy=False)
+
+    # plt.figure(figsize=(16, 8))
+    # recon_2(p, NUM_OCTANT_ANGLES, ITERATIONS, CT_RECON, noisy=True)
+
+    # plt.show()
 
 
 

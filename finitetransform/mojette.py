@@ -394,8 +394,8 @@ def angleSet_Symmetric(P, Q, octant=0, binLengths=False, K = 1, prime_only=False
     binLengthList = []
     angles.append(sortedVectors[index])
     binLengthList.append(projectionLength(sortedVectors[index],P,Q))
-    # while not isKatzCriterion(P, Q, angles, K) and index < len(sortedVectors): # check Katz
-    while index < len(sortedVectors) and index < max_angles + start_index: # check Katz
+    while not isKatzCriterion(P, Q, angles, K) and index < len(sortedVectors): # check Katz
+    # while index < len(sortedVectors) and index < max_angles + start_index: # check Katz
         index += 1
         angles.append(sortedVectors[index])
         p, q = farey.get_pq(sortedVectors[index]) # p = imag, q = real

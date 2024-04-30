@@ -55,12 +55,7 @@ import random
 matplotlib.use('Qt4Agg')
 import matplotlib.pyplot as plt
 
-#for FBP
-from skimage.io import imread
-from skimage import data_dir
-from skimage.transform import radon, rescale
-from skimage.transform import iradon
-from skimage.transform import iradon_sart
+
 
 
 
@@ -88,11 +83,7 @@ k = parameters[1]
 M = int(k*n)
 N = n 
 
-#angle set 'octant' types
-BOW_TIE = -1
-OCTANT = 0
-FIRST_QUAD = 1
-TOP_QUADS = 2
+
 
 #OSEM params
 s = parameters[3]
@@ -121,8 +112,9 @@ CT_RECON = 0
 SNR_CT = 0.95
 SNR_MRI = 40
 NUM_OCTANT_ANGLES = 25 + 1
-ITERATIONS = 500
+ITERATIONS = 300
 OCTANT_MRI = 2
+FIRST_QUAD = 2
 OCTANT_CT = 4
 LINE_MRI = "--"
 LINE_CT = '-'
@@ -271,6 +263,29 @@ def get_path(recon_type, recon_num, num_angles, iterations, noisy):
 
 
 # angle helpers ----------------------------------------------------------------
+def extend_quadrant(angles_subsets): 
+    new_angles = []
+    new_angles_subset = []
+
+    for angles in angles_subsets: 
+        new_subset = []
+
+        for angle_quad_1 in angles: 
+            p, q = farey.get_pq(angle_quad_1)
+            if angle_quad_1 not in new_angles: #check only because unsure of how (1, 0) is handeled
+                new_angles.append(angle_quad_1)
+                new_subset.append(angle_quad_1)
+            
+            angle_quad_2 = farey.farey(p, -1 * q)
+            if angle_quad_2 not in new_angles and abs(angle_quad_1) != 1: 
+                new_angles.append(angle_quad_2)
+                new_subset.append(angle_quad_2)
+
+        new_angles_subset.append(new_subset)
+
+    return new_angles, new_angles_subset
+
+
 def get_subset_index(angle, subsetAngles): 
     """Find subset index of the given angle. 
 
@@ -390,30 +405,35 @@ def plot_angles(angles, colour='skyblue', line='-', linewidth=1, label="angles",
 
 # FBP --------------------------------------------------------------------------
 def fbp(p, num_angles, noisy=False):
-    image = imread(data_dir + "/phantom.png", as_grey=True)
-    image = rescale(image, scale = float(p) / 400, mode='constant')
+    #for FBP
+    from skimage.io import imread
+    import skimage as sk 
+    from skimage import transform as tfm
+
+    image = imread(sk.data_dir + "/phantom.png", as_grey=True)
+    image = tfm.rescale(image, scale = float(p) / 400, mode='constant')
     theta = np.linspace(0., 180., num_angles, endpoint=True)
-    sinogram = radon(image, theta=theta, circle=True)
+    sinogram = tfm.radon(image, theta=theta, circle=True)
 
     if noisy: 
         add_noise(sinogram, snr=SNR_CT)
 
     data = {}
 
-    reconstruction_fbp = iradon(sinogram, theta=theta, circle=True)
+    reconstruction_fbp = tfm.iradon(sinogram, theta=theta, circle=True)
     rmse_fbp = np.sqrt(imageio.immse(image, reconstruction_fbp))
     psnr_fbp = imageio.impsnr(image, reconstruction_fbp)
     ssim_fbp = imageio.imssim(image.astype(float), reconstruction_fbp.astype(float))
     data["fbp"] = {"rmse":rmse_fbp, "psnr":psnr_fbp, "ssim":ssim_fbp}
 
-    reconstruction_sart = iradon_sart(sinogram, theta=theta)
+    reconstruction_sart = tfm.iradon_sart(sinogram, theta=theta)
     rmse_sart_1 = np.sqrt(imageio.immse(image, reconstruction_sart))
     psnr_sart_1 = imageio.impsnr(image, reconstruction_sart)
     ssim_sart_1 = imageio.imssim(image.astype(float), reconstruction_sart.astype(float))
     data["sart1"] = {"rmse":rmse_sart_1, "psnr":psnr_sart_1, "ssim":ssim_sart_1}
 
 
-    reconstruction_sart2 = iradon_sart(sinogram, theta=theta,
+    reconstruction_sart2 = tfm.iradon_sart(sinogram, theta=theta,
                                     image=reconstruction_sart)
     rmse_sart_2 = np.sqrt(imageio.immse(image, reconstruction_sart2))
     psnr_sart_2 = imageio.impsnr(image, reconstruction_sart2)
@@ -597,7 +617,7 @@ def recon_CT(p, angles, subsetAngles, iterations, noisy=False):
             m, inv = farey.toFinite(angle, p)
             mValues.append(m)            
         subsetsMValues.append(mValues)
-    
+    print(subsetsMValues)
 
     mt_lena = mojette.transform(lena, angles)
     
@@ -773,20 +793,20 @@ def regular_recon(p, num_angles_octant, iterations, recon_type=MRI_RECON, colour
     num_angles_mri = num_angles_octant * OCTANT_MRI - 1 #must be odd to account for (1, 1) having no mirror pair  
     num_angles_ct = 2 * (num_angles_mri - 2) #each angle maps to itself and its vertical mirror EXCEPT (0, 1) and (1, 0) 
 
-    if recon_type: #MRI RECON
+    if recon_type == MRI_RECON: #MRI RECON
         num_angles = num_angles_mri if num_angles_octant > 0 else -1
-        octant = OCTANT_MRI
         recon = recon_MRI
         path_head = "results_MRI/"
         title = "MRI reconstruction"
     else: #CT RECON
         num_angles = num_angles_ct if num_angles_octant > 0 else -1
-        octant = OCTANT_CT
         recon = recon_CT
         path_head = "results_CT/"
         title = "CT reconstruction"
 
-    angles, subsetAngles = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=octant,K=K, max_angles=num_angles)  
+    angles, subsetAngles = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=FIRST_QUAD,K=K, max_angles=num_angles)  
+    if recon_type == CT_RECON: 
+        angles, subsetAngles = extend_quadrant(subsetAngles)
 
     recon_im, rmses, psnrs, ssims = recon(p, angles, remove_empty(subsetAngles), iterations, noisy)
     plot_recon(rmses, psnrs, ssims, colour=colour, line=line, label="regular recon, " + str(num_angles_ct) + " projections")
@@ -1354,11 +1374,34 @@ def exp_1():
 #Shes a runner shes a track star -----------------------------------------------
 if __name__ == "__main__": 
     p = nt.nearestPrime(N)
-    color=["hotpink", "mediumpurple", "skyblue"]
-    for i, smoothIncrement in enumerate([5, 10, 20]): 
-        angles, subsetAngles = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=OCTANT_CT,K=K, max_angles=-1)  
-        recon_im, rmses, psnrs, ssims = recon_CT(p, angles, remove_empty(subsetAngles), 300, False)
-        plot_recon(rmses, psnrs, ssims, colour=color[i], label="recon mode " + str(x) )
+    # regular_recon(p, -1, ITERATIONS, CT_RECON)
+    # regular_recon(p, -1, ITERATIONS, MRI_RECON, colour="skyblue")
+
+    # regular_recon(p, -1, ITERATIONS, CT_RECON, colour="hotpink", line="--")
+    angles, subsetAngles = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=FIRST_QUAD,K=K, max_angles=-1)  
+    angles, subsetAngles = extend_quadrant(subsetAngles)
+    # print(sorted(angles, key=EUCLID_NORM))
+    # plot_angles(angles, colour="hotpink")
+    recon_im, rmses, psnrs, ssims = recon_CT(p, angles, remove_empty(subsetAngles), iterations, False)
+    plot_recon(rmses, psnrs, ssims, colour="hotpink", line="-", label="dbl angles")
+
+    angles, subsetAngles = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=4,K=K, max_angles=-1)  
+    # print(sorted(angles, key=EUCLID_NORM))
+    # plot_angles(angles, colour="skyblue", line = "--")
+    recon_im, rmses, psnrs, ssims = recon_CT(p, angles, remove_empty(subsetAngles), iterations, False)
+    plot_recon(rmses, psnrs, ssims, colour="skyblue", line="--", label="norm angles")
+
+    
+
+
+
+
+
+    # color=["hotpink", "mediumpurple", "skyblue"]
+    # for i, smoothIncrement in enumerate([5, 10, 20]): 
+    #     angles, subsetAngles = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=OCTANT_CT,K=K, max_angles=-1)  
+    #     recon_im, rmses, psnrs, ssims = recon_CT(p, angles, remove_empty(subsetAngles), 300, False)
+    #     plot_recon(rmses, psnrs, ssims, colour=color[i], label="recon mode " + str(x) )
     # recon_1(p, num_angles_octant, iterations, recon_type=MRI_RECON, noisy=False)
 
     # plt.figure(figsize=(16, 8))
@@ -1396,3 +1439,5 @@ if __name__ == "__main__":
     # recon_3(p, NUM_OCTANT_ANGLES, ITERATIONS, CT_RECON, noisy=False)
     # plt.show()
     
+
+# %%

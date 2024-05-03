@@ -52,8 +52,15 @@ import os
 import math
 import random
 
+
 matplotlib.use('Qt4Agg')
 import matplotlib.pyplot as plt
+
+
+from skimage.io import imread
+from skimage import data_dir
+import skimage as sk 
+from skimage import transform as tfm
 
 
 
@@ -120,6 +127,7 @@ FIRST_QUAD = 2
 OCTANT_CT = 4
 LINE_MRI = "--"
 LINE_CT = '-'
+KATZ_ANGLES = -1
 
 def get_compostie_sets(composites, class_type, recon_type=MRI_RECON): 
     """
@@ -407,11 +415,6 @@ def plot_angles(angles, colour='skyblue', line='-', linewidth=1, label="angles",
 
 # FBP --------------------------------------------------------------------------
 def fbp(p, num_angles, noisy=False):
-    #for FBP
-    from skimage.io import imread
-    import skimage as sk 
-    from skimage import transform as tfm
-
     image = imread(sk.data_dir + "/phantom.png", as_grey=True)
     image = tfm.rescale(image, scale = float(p) / 400, mode='constant')
     theta = np.linspace(0., 180., num_angles, endpoint=True)
@@ -428,25 +431,25 @@ def fbp(p, num_angles, noisy=False):
     ssim_fbp = imageio.imssim(image.astype(float), reconstruction_fbp.astype(float))
     data["fbp"] = {"rmse":rmse_fbp, "psnr":psnr_fbp, "ssim":ssim_fbp}
 
-    reconstruction_sart = tfm.iradon_sart(sinogram, theta=theta)
-    rmse_sart_1 = np.sqrt(imageio.immse(image, reconstruction_sart))
-    psnr_sart_1 = imageio.impsnr(image, reconstruction_sart)
-    ssim_sart_1 = imageio.imssim(image.astype(float), reconstruction_sart.astype(float))
-    data["sart1"] = {"rmse":rmse_sart_1, "psnr":psnr_sart_1, "ssim":ssim_sart_1}
+    # reconstruction_sart = tfm.iradon_sart(sinogram, theta=theta)
+    # rmse_sart_1 = np.sqrt(imageio.immse(image, reconstruction_sart))
+    # psnr_sart_1 = imageio.impsnr(image, reconstruction_sart)
+    # ssim_sart_1 = imageio.imssim(image.astype(float), reconstruction_sart.astype(float))
+    # data["sart1"] = {"rmse":rmse_sart_1, "psnr":psnr_sart_1, "ssim":ssim_sart_1}
 
 
-    reconstruction_sart2 = tfm.iradon_sart(sinogram, theta=theta,
-                                    image=reconstruction_sart)
-    rmse_sart_2 = np.sqrt(imageio.immse(image, reconstruction_sart2))
-    psnr_sart_2 = imageio.impsnr(image, reconstruction_sart2)
-    ssim_sart_2 = imageio.imssim(image.astype(float), reconstruction_sart2.astype(float))
-    data["sart2"] = {"rmse":rmse_sart_2, "psnr":psnr_sart_2, "ssim":ssim_sart_2}
+    # reconstruction_sart2 = tfm.iradon_sart(sinogram, theta=theta,
+    #                                 image=reconstruction_sart)
+    # rmse_sart_2 = np.sqrt(imageio.immse(image, reconstruction_sart2))
+    # psnr_sart_2 = imageio.impsnr(image, reconstruction_sart2)
+    # ssim_sart_2 = imageio.imssim(image.astype(float), reconstruction_sart2.astype(float))
+    # data["sart2"] = {"rmse":rmse_sart_2, "psnr":psnr_sart_2, "ssim":ssim_sart_2}
 
-    return reconstruction_sart2, rmse_sart_2, psnr_sart_2, ssim_sart_2
+    return reconstruction_fbp, rmse_fbp, psnr_fbp, ssim_fbp
 
 
 # Base for CT and MRI reconstructions ------------------------------------------
-def angleSubSets_Symmetric(s, mode, P, Q, octant=1, binLengths=False, K = 1, prime_only = False, max_angles = 10, norm=EUCLID_NORM):
+def angleSubSets_Symmetric(s, mode, P, Q, octant=FIRST_QUAD, binLengths=False, K = 1, prime_only = False, max_angles = 10, norm=EUCLID_NORM):
     '''
     Generate the minimal L1 angle set for the MT for s subsets.
     Parameter K controls the redundancy, K = 1 is minimal.
@@ -609,7 +612,11 @@ def osem_expand(iterations, p, g_j, os_mValues, projector, backprojector,
 
 
 def recon_CT(p, angles, subsetAngles, iterations, noisy=False): 
+
     lena, mask = imageio.phantom(N, p, True, np.uint32, True)
+
+    #get half plane of angles
+    angles, subsetAngles = extend_quadrant(subsetAngles)
 
     #convert angles to gradients for OSEM
     subsetsMValues = []
@@ -806,9 +813,9 @@ def regular_recon(p, num_angles_octant, iterations, recon_type=MRI_RECON, colour
         path_head = "results_CT/"
         title = "CT reconstruction"
 
-    angles, subsetAngles = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=FIRST_QUAD,K=K, max_angles=num_angles)  
-    if recon_type == CT_RECON: 
-        angles, subsetAngles = extend_quadrant(subsetAngles)
+    angles, subsetAngles = angleSubSets_Symmetric(s,subsetsMode,p,p,K=K, max_angles=num_angles)  
+    # if recon_type == CT_RECON: 
+    #     angles, subsetAngles = extend_quadrant(subsetAngles)
 
     recon_im, rmses, psnrs, ssims = recon(p, angles, remove_empty(subsetAngles), iterations, noisy)
     # plot_recon(rmses, psnrs, ssims, colour=colour, line=line, label="regular recon, " + str(num_angles_ct) + " projections") #normal
@@ -848,7 +855,7 @@ def prime_recon(p, num_angles_octant, iterations, recon_type=MRI_RECON, colour="
         path_head = "results_CT/"
         title = "CT prime reconstruction"
 
-    angles, subset_angles = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=octant,K=K, max_angles=num_angles) 
+    angles, subset_angles = angleSubSets_Symmetric(s,subsetsMode,N,N,K=K, max_angles=num_angles) 
     primes, primes_subset = get_primes(subset_angles)
     recon_im, rmses, psnrs, ssims = recon(p, primes, remove_empty(primes_subset), iterations, noisy)
     plot_recon(rmses, psnrs, ssims, colour=colour, line=line, label="prime recon, " + str(num_angles_ct) + " projections")
@@ -883,7 +890,7 @@ def composite_recon(p, num_angles_octant, iterations, recon_type=MRI_RECON, colo
         path_head = "results_CT/"
         title = "CT composite reconstruction"
 
-    angles, subset_angles = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=octant,K=K, max_angles=num_angles) 
+    angles, subset_angles = angleSubSets_Symmetric(s,subsetsMode,N,N,K=K, max_angles=num_angles) 
     comps, comps_subset = get_composites(subset_angles)
     recon_im, rmses, psnrs, ssims = recon(p, comps, remove_empty(comps_subset), iterations, noisy)
     plot_recon(rmses, psnrs, ssims, colour=colour, line=line, label="composite recon, " + str(num_angles_ct) + " projections")
@@ -919,7 +926,7 @@ def comp_recplacement_recon(p, num_angles_octant, iterations, num_to_store=20, r
 
     
     #prime replacement recon
-    angles, subset_angles = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=octant,K=K, max_angles=num_angles) 
+    angles, subset_angles = angleSubSets_Symmetric(s,subsetsMode,N,N,K=K, max_angles=num_angles) 
 
     comp_replacements = []
     for i, subset in enumerate(subset_angles): 
@@ -1006,8 +1013,8 @@ def recon_neg_2(p, iterations, num_angles):
         iterations (int): number of OSEM iterations
     """
     data = {}
-    angles, subsetAngles = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=OCTANT_CT,K=K, max_angles=num_angles) 
-
+    angles, subsetAngles = angleSubSets_Symmetric(s,subsetsMode,N,N,K=K, max_angles=num_angles) 
+    
     recon_im, rmses, psnrs, ssims = recon_CT(p, angles, remove_empty(subsetAngles), iterations, False)
     data["no noise"] = {"recon": recon_im, "rmse": rmses, "psnr": psnrs, "ssim": ssims}
     # plot_recon(rmses, psnrs, ssims, colour="hotpink", line="-", label="not noisy recon, " + str(num_angles) + " projections")
@@ -1017,13 +1024,13 @@ def recon_neg_2(p, iterations, num_angles):
     data["noise"] = {"recon": recon_im_noisy, "rmse": rmses, "psnr": psnrs, "ssim": ssims}
 
 
-    recon_im_fbp, rmse, psnr, ssim = fbp(p, num_angles)
+    recon_im_fbp, rmse, psnr, ssim = fbp(p, len(angles))
     rmses = rmse * np.ones_like(rmses)
     psnrs = psnr * np.ones_like(psnrs)
     ssims = ssim * np.ones_like(ssims)
     data["FBP no noise"] = {"recon": recon_im_fbp, "rmse": rmses, "psnr": psnrs, "ssim": ssims}
 
-    recon_im_fbp_noisy, rmse, psnr, ssim = fbp(p, num_angles, noisy=True)
+    recon_im_fbp_noisy, rmse, psnr, ssim = fbp(p, len(angles), noisy=True)
     rmses = rmse * np.ones_like(rmses)
     psnrs = psnr * np.ones_like(psnrs)
     ssims = ssim * np.ones_like(ssims)
@@ -1050,7 +1057,7 @@ def recon_neg_1(p, iterations):
     path_head = "results_CT/"
     title = "CT reconstruction"
 
-    angles, subsetAngles = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=octant,K=K, max_angles=num_angles)  
+    angles, subsetAngles = angleSubSets_Symmetric(s,subsetsMode,N,N,K=K, max_angles=num_angles)  
 
     recon_im, rmses, psnrs, ssims = recon(p, angles, remove_empty(subsetAngles), iterations, noisy=True)
     plot_recon(rmses, psnrs, ssims, colour="hotpink", line="-", label="ChaoS not noisy recon, " + str(num_angles) + " projections")
@@ -1128,7 +1135,7 @@ def recon_2(p, num_angles_octant, iterations, recon_type=MRI_RECON, noisy=False)
         recon = recon_CT
         title = "CT reconstruction"
 
-    angles, subset_angles = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=octant,K=K, max_angles=num_angles) 
+    angles, subset_angles = angleSubSets_Symmetric(s,subsetsMode,N,N,K=K, max_angles=num_angles) 
     composites, subset_composites = get_composites(subset_angles)
     
     #set up dictionary pre recon 
@@ -1270,7 +1277,7 @@ def plot_neg_2(path, num_angles):
 
     lena, mask = imageio.phantom(N, p, True, np.uint32, True)
     lena_fbp = imread(data_dir + "/phantom.png", as_grey=True)
-    lena_fbp = rescale(lena_fbp, scale = float(p) / 400, mode='constant')
+    lena_fbp = tfm.rescale(lena_fbp, scale = float(p) / 400, mode='constant')
 
     fig, axs = plt.subplots(2, 4, figsize=(18, 12))#, sharey=True)
     axs = axs.flat
@@ -1345,55 +1352,56 @@ def ct_katz(p, iterations, noisy=False):
         Defaults to 0.
         colour (str, optional): Colour of plot. Defaults to "hotpink".
     """
-    angles, subsetAngles = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=OCTANT_CT,K=K, max_angles=62)  
+    angles, subsetAngles = angleSubSets_Symmetric(s,subsetsMode,N,N,K=K, max_angles=KATZ_ANGLES)  
     recon_im, rmses, psnrs, ssims = recon_CT(p, angles, remove_empty(subsetAngles), iterations, noisy)
     plot_recon(rmses, psnrs, ssims, colour="hotpink", label="regular recon, " + str(len(angles)) + " projections")
 
-    angles, subsetAngles = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=OCTANT_CT,K=K, max_angles=62, prime_only=True)  
+    angles, subsetAngles = angleSubSets_Symmetric(s,subsetsMode,N,N,K=K, max_angles=KATZ_ANGLES, prime_only=True)  
     recon_im, rmses, psnrs, ssims = recon_CT(p, angles, remove_empty(subsetAngles), iterations, noisy)
     plot_recon(rmses, psnrs, ssims, colour="skyblue", label="prime recon, " + str(len(angles)) + " projections")
     # plt.suptitle(title)
 
 #exps --------------------------------------------------------------------------
 def exp_0():
-    # p = nt.nearestPrime(N)
-    # recon_neg_2(p, 300, p)
+    p = nt.nearestPrime(N)
+    recon_neg_2(p, 760, KATZ_ANGLES)
 
-    path = "results_CT/recon_neg_2/FBP_ChaoS_num_angles_{}.npz".format(p)
-    plot_neg_2(path, p)
+    path = "results_CT/recon_neg_2/FBP_ChaoS_num_angles_{}.npz".format(KATZ_ANGLES)
+    plot_neg_2(path, KATZ_ANGLES)
 
 def exp_1(): 
     p = nt.nearestPrime(N)
-    its = 300
+    its = 760
+    angles, _ = angleSubSets_Symmetric(s,subsetsMode,N,N,K=K, max_angles=KATZ_ANGLES) 
+    katz_num_angles = len(angles)
 
-    for num_angle in [25, 50, 75, 100, 125]: 
+    for k in [0.25, 0.5, 0.75, 1]: 
         plt.figure(figsize=(16, 8))
-        recon_neg_2(p, its, num_angle)
+        recon_neg_2(p, its, k * katz_num_angles)
 
-    for num_angle in [25, 50, 75, 100, 125]: 
-        path = "results_CT/recon_neg_2/FBP_ChaoS_num_angles_{}.npz".format(num_angle)
-        plot_neg_2(path, num_angle)
+    for k in [0.25, 0.5, 0.75, 1]: 
+        path = "results_CT/recon_neg_2/FBP_ChaoS_num_angles_{}.npz".format(k * katz_num_angles)
+        plot_neg_2(path, k * katz_num_angles)
 
 
 #Shes a runner shes a track star -----------------------------------------------
 if __name__ == "__main__": 
     p = nt.nearestPrime(N)
-    # regular_recon(p, -1, ITERATIONS, CT_RECON)
-    # regular_recon(p, -1, ITERATIONS, MRI_RECON, colour="skyblue")
+    exp_0()
 
-    # regular_recon(p, -1, ITERATIONS, CT_RECON, colour="hotpink", line="--")
-    angles, subsetAngles = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=FIRST_QUAD,K=K, max_angles=-1)  
-    angles, subsetAngles = extend_quadrant(subsetAngles)
-    # print(sorted(angles, key=EUCLID_NORM))
-    # plot_angles(angles, colour="hotpink")
-    recon_im, rmses, psnrs, ssims = recon_CT(p, angles, remove_empty(subsetAngles), iterations, False)
-    plot_recon(rmses, psnrs, ssims, colour="hotpink", line="-", label="dbl angles")
+    # # regular_recon(p, -1, ITERATIONS, CT_RECON, colour="hotpink", line="--")
+    # angles, subsetAngles = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=FIRST_QUAD,K=K, max_angles=-1)  
+    # angles, subsetAngles = extend_quadrant(subsetAngles)
+    # # print(sorted(angles, key=EUCLID_NORM))
+    # # plot_angles(angles, colour="hotpink")
+    # recon_im, rmses, psnrs, ssims = recon_CT(p, angles, remove_empty(subsetAngles), iterations, False)
+    # plot_recon(rmses, psnrs, ssims, colour="hotpink", line="-", label="dbl angles")
 
-    angles, subsetAngles = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=4,K=K, max_angles=-1)  
-    # print(sorted(angles, key=EUCLID_NORM))
-    # plot_angles(angles, colour="skyblue", line = "--")
-    recon_im, rmses, psnrs, ssims = recon_CT(p, angles, remove_empty(subsetAngles), iterations, False)
-    plot_recon(rmses, psnrs, ssims, colour="skyblue", line="--", label="norm angles")
+    # angles, subsetAngles = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=4,K=K, max_angles=-1)  
+    # # print(sorted(angles, key=EUCLID_NORM))
+    # # plot_angles(angles, colour="skyblue", line = "--")
+    # recon_im, rmses, psnrs, ssims = recon_CT(p, angles, remove_empty(subsetAngles), iterations, False)
+    # plot_recon(rmses, psnrs, ssims, colour="skyblue", line="--", label="norm angles")
 
     
 

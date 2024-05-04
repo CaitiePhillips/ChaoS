@@ -145,17 +145,13 @@ def get_compostie_sets(composites, class_type, recon_type=MRI_RECON):
         if class_type == 0: 
             angles = [farey.farey(p, q)]
         elif class_type == 1: 
-            angles = [farey.farey(p, q), farey.farey(p, -1*q)]#type 1 - 1st and 4th octant
+            angles = [farey.farey(p, q)]#type 1 - 1st and 4th octant
         elif class_type == 2: 
-            angles = [farey.farey(q, p), farey.farey(q, -1*p)] #type 2 - 2nd and 3rd octant
+            angles = [farey.farey(q, p)] #type 2 - 2nd and 3rd octant
         elif class_type == 4: 
-            angles = [farey.farey(p, q), farey.farey(q, p), 
-                            farey.farey(q, -1*p), farey.farey(p, -1*q)] #type 4 - all octants
+            angles = [farey.farey(p, q), farey.farey(q, p)] #type 4 - all octants
         else: 
             return 
-        
-        if recon_type == MRI_RECON and class_type != 0: 
-            angles = angles[0: len(angles) // 2]
         
         if angles not in subsets: 
             subsets.append(angles)
@@ -786,7 +782,7 @@ def recon_MRI(p, angles, subsetAngles, iterations, noisy=False):
 
 
 # base angle set reconstructions -----------------------------------------------
-def regular_recon(p, num_angles_octant, iterations, recon_type=MRI_RECON, colour="hotpink", line="-", noisy=False, s=12, K=0.4):
+def regular_recon(p, num_angles, iterations, recon_type=MRI_RECON, colour="hotpink", line="-", noisy=False, s=12, K=0.4):
     """Completes one MRI or CT reconstruction. Plots error info. 
 
     Args:
@@ -799,19 +795,15 @@ def regular_recon(p, num_angles_octant, iterations, recon_type=MRI_RECON, colour
     """
     #num angles given to each reconstruction. note: number CT uses is the number 
     #of projections for both reconstructions. 
-    num_angles_mri = num_angles_octant * OCTANT_MRI - 1 #must be odd to account for (1, 1) having no mirror pair  
-    num_angles_ct = 2 * (num_angles_mri - 2) #each angle maps to itself and its vertical mirror EXCEPT (0, 1) and (1, 0) 
 
     if recon_type == MRI_RECON: #MRI RECON
-        num_angles = num_angles_mri if num_angles_octant > 0 else -1
         recon = recon_MRI
         path_head = "results_MRI/"
-        title = "MRI reconstruction"
+        title = "MRI reconstruction" + " (noisy)" if noisy else ""
     else: #CT RECON
-        num_angles = num_angles_ct if num_angles_octant > 0 else -1
         recon = recon_CT
         path_head = "results_CT/"
-        title = "CT reconstruction"
+        title = "CT reconstruction" + " (noisy)" if noisy else ""
 
     angles, subsetAngles = angleSubSets_Symmetric(s,subsetsMode,p,p,K=K, max_angles=num_angles)  
     # if recon_type == CT_RECON: 
@@ -819,14 +811,14 @@ def regular_recon(p, num_angles_octant, iterations, recon_type=MRI_RECON, colour
 
     recon_im, rmses, psnrs, ssims = recon(p, angles, remove_empty(subsetAngles), iterations, noisy)
     # plot_recon(rmses, psnrs, ssims, colour=colour, line=line, label="regular recon, " + str(num_angles_ct) + " projections") #normal
-    plot_recon(rmses, psnrs, ssims, colour=colour, line=line, label="s= " + str(s) + " K=" + str(K)) #testing s vals
+    plot_recon(rmses, psnrs, ssims, colour=colour, line=line, label=title + ", " + str(len(angles)) + " projections")
 
     # plt.suptitle(title)
 
     return angles, recon_im, rmses, psnrs, ssims
 
 
-def prime_recon(p, num_angles_octant, iterations, recon_type=MRI_RECON, colour="skyblue", line="-", noisy=False): 
+def prime_recon(p, num_angles, iterations, recon_type=MRI_RECON, colour="skyblue", line="-", noisy=False): 
     """Completes one MRI or CT reconstruction with only the prime angle set. 
     Plots error info. 
 
@@ -839,31 +831,23 @@ def prime_recon(p, num_angles_octant, iterations, recon_type=MRI_RECON, colour="
     """
     #num angles given to each reconstruction. note: number CT uses is the number 
     #of projections for both reconstructions. 
-    num_angles_mri = num_angles_octant * OCTANT_MRI - 1 #must be odd to account for (1, 1) having no mirror pair  
-    num_angles_ct = 2 * (num_angles_mri - 2) #each angle maps to itself and its vertical mirror EXCEPT (0, 1) and (1, 0) 
 
     if recon_type: #MRI RECON
-        num_angles = num_angles_mri
-        octant = OCTANT_MRI
         recon = recon_MRI
-        path_head = "results_MRI/"
-        title = "MRI prime reconstruction"
+        title = "MRI prime reconstruction" + " (noisy)" if noisy else ""
     else: #CT RECON
-        num_angles = num_angles_ct
-        octant = OCTANT_CT
         recon = recon_CT
-        path_head = "results_CT/"
-        title = "CT prime reconstruction"
+        title = "CT prime reconstruction" + " (noisy)" if noisy else ""
 
     angles, subset_angles = angleSubSets_Symmetric(s,subsetsMode,N,N,K=K, max_angles=num_angles) 
     primes, primes_subset = get_primes(subset_angles)
     recon_im, rmses, psnrs, ssims = recon(p, primes, remove_empty(primes_subset), iterations, noisy)
-    plot_recon(rmses, psnrs, ssims, colour=colour, line=line, label="prime recon, " + str(num_angles_ct) + " projections")
+    plot_recon(rmses, psnrs, ssims, colour=colour, line=line, label=title + ", " + str(len(primes)) + " projections")
 
-    return angles, recon_im, rmses, psnrs, ssims
+    return primes, recon_im, rmses, psnrs, ssims
 
 
-def composite_recon(p, num_angles_octant, iterations, recon_type=MRI_RECON, colour="mediumpurple", line="-", noisy=False): 
+def composite_recon(p, num_angles, iterations, recon_type=MRI_RECON, colour="mediumpurple", line="-", noisy=False): 
     """Completes one MRI or CT reconstruction with only the composite angle set. 
     Plots error info. 
 
@@ -874,28 +858,20 @@ def composite_recon(p, num_angles_octant, iterations, recon_type=MRI_RECON, colo
         recon (int, optional): Specificy MRI recon (=1) or CT recon (=0). 
         Defaults to 0
     """
-    num_angles_mri = num_angles_octant * OCTANT_MRI - 1 #must be odd to account for (1, 1) having no mirror pair  
-    num_angles_ct = 2 * (num_angles_mri - 2) #each angle maps to itself and its vertical mirror EXCEPT (0, 1) and (1, 0) 
 
     if recon_type: #MRI RECON
-        num_angles = num_angles_mri
-        octant = OCTANT_MRI
         recon = recon_MRI
-        path_head = "results_MRI/"
-        title = "MRI composite reconstruction"
+        title = "MRI composite reconstruction" + " (noisy)" if noisy else ""
     else: #CT RECON
-        num_angles = num_angles_ct
-        octant = OCTANT_CT
         recon = recon_CT
-        path_head = "results_CT/"
-        title = "CT composite reconstruction"
+        title = "CT composite reconstruction" + " (noisy)" if noisy else ""
 
     angles, subset_angles = angleSubSets_Symmetric(s,subsetsMode,N,N,K=K, max_angles=num_angles) 
     comps, comps_subset = get_composites(subset_angles)
     recon_im, rmses, psnrs, ssims = recon(p, comps, remove_empty(comps_subset), iterations, noisy)
-    plot_recon(rmses, psnrs, ssims, colour=colour, line=line, label="composite recon, " + str(num_angles_ct) + " projections")
+    plot_recon(rmses, psnrs, ssims, colour=colour, line=line, label=title + ", " + str(len(comps)) + " projections")
 
-    return angles, recon_im, rmses, psnrs, ssims
+    return comps, recon_im, rmses, psnrs, ssims
 
 
 def comp_recplacement_recon(p, num_angles_octant, iterations, num_to_store=20, recon_type=MRI_RECON, colour="limegreen", line="-", noisy=False):
@@ -1023,7 +999,7 @@ def recon_neg_2(p, iterations, num_angles):
     # plot_recon(rmses, psnrs, ssims, colour="skyblue", line="--", label="noisy recon, " + str(num_angles) + " projections")
     data["noise"] = {"recon": recon_im_noisy, "rmse": rmses, "psnr": psnrs, "ssim": ssims}
 
-
+    angles, subsetAngles = extend_quadrant(subsetAngles)
     recon_im_fbp, rmse, psnr, ssim = fbp(p, len(angles))
     rmses = rmse * np.ones_like(rmses)
     psnrs = psnr * np.ones_like(psnrs)
@@ -1092,7 +1068,7 @@ def recon_0(p, num_angles_octant, iterations, noisy=False):
     # np.savez(file=path, data=data)
 
 
-def recon_1(p, num_angles_octant, iterations, recon_type=MRI_RECON, noisy=False): 
+def recon_1(p, iterations, num_angles=KATZ_ANGLES, recon_type=MRI_RECON, noisy=False): 
     """Reconstructions of regular, prime, and composite angle sets for CT or MRI. 
     Plots and saves. 
 
@@ -1104,17 +1080,19 @@ def recon_1(p, num_angles_octant, iterations, recon_type=MRI_RECON, noisy=False)
         Defaults to 0
     """
     data = {}
+    if noisy: 
+        line = "--"
     
-    angles, recon, rmses, psnrs, ssims = regular_recon(p, num_angles_octant, iterations, recon_type, noisy=noisy)
+    angles, recon, rmses, psnrs, ssims = regular_recon(p, num_angles, iterations, recon_type, noisy=noisy, line=line)
     data["regular"] = {"angles": angles, "recon": recon, "rmse": rmses, "psnr": psnrs, "ssim": ssims, "noise":noisy}
 
-    angles, recon, rmses, psnrs, ssims = prime_recon(p, num_angles_octant, iterations, recon_type, noisy=noisy)
+    angles, recon, rmses, psnrs, ssims = prime_recon(p, num_angles, iterations, recon_type, noisy=noisy, line=line)
     data["prime"] = {"angles": angles, "recon": recon, "rmse": rmses, "psnr": psnrs, "ssim": ssims, "noise":noisy}
 
-    angles, recon, rmses, psnrs, ssims = composite_recon(p, num_angles_octant, iterations, recon_type, noisy=noisy)
+    angles, recon, rmses, psnrs, ssims = composite_recon(p, num_angles, iterations, recon_type, noisy=noisy, line=line)
     data["composite"] = {"angles": angles, "recon": recon, "rmse": rmses, "psnr": psnrs, "ssim": ssims, "noise":noisy}
 
-    path = get_path(recon_type, 1, num_angles_octant, iterations, noisy)
+    path = get_path(recon_type, 1, num_angles, iterations, noisy)
     np.savez(file=path, data=data)
 
 
@@ -1292,10 +1270,36 @@ def plot_neg_2(path, num_angles):
     plt.suptitle("num projs: " + str(num_angles))
 
 
-def plot_recon_1b(): 
+def plot_recon_1(path, noisy): 
     """Plots reg and prime recons for increasing number of angles for octant. 
     """
-    path = "results_CT/recon_1/recon_1b/many_angle_its_500.npz"
+    line = "--" if noisy else "-"
+
+    data = np.load(path)["data"].item()
+    reg_recon = data["regular"]
+    prime_recon = data["prime"]
+    comp_recon = data["composite"]
+
+    plot_recon(reg_recon["rmse"], reg_recon["psnr"], reg_recon["ssim"], 
+               colour = "hotpink", 
+               line = line,
+               label="CT reconstruction {}".format("(noisy) " if noisy else "") + str(len(reg_recon["angles"])) + " projections")
+    
+    plot_recon(prime_recon["rmse"], prime_recon["psnr"], prime_recon["ssim"], 
+               colour = "skyblue", 
+               line = line,
+               label="CT prime reconstruction {}".format("(noisy) " if noisy else "") + str(len(prime_recon["angles"])) + " projections")
+    
+    plot_recon(comp_recon["rmse"], comp_recon["psnr"], comp_recon["ssim"], 
+               colour = "mediumpurple", 
+               line = line,
+               label="CT composite reconstruction {}".format("(noisy) " if noisy else "") + str(len(comp_recon["angles"])) + " projections")
+
+    
+
+def plot_recon_1b(path): 
+    """Plots reg and prime recons for increasing number of angles for octant. 
+    """
     data = np.load(path)["data"].item()
     reg_recon_info = data["regular"]
     prime_recon_info = data["prime"]
@@ -1369,25 +1373,92 @@ def exp_0():
     path = "results_CT/recon_neg_2/FBP_ChaoS_num_angles_{}.npz".format(KATZ_ANGLES)
     plot_neg_2(path, KATZ_ANGLES)
 
+
 def exp_1(): 
+    """At the moment idk what is really happening here - this could be evidencie
+      of less and more angles than Kazt and how it effects reconstruction. But rn, 
+      it doesn't seem like much. 
+    """
     p = nt.nearestPrime(N)
     its = 760
     angles, _ = angleSubSets_Symmetric(s,subsetsMode,N,N,K=K, max_angles=KATZ_ANGLES) 
     katz_num_angles = len(angles)
 
-    for k in [0.25, 0.5, 0.75, 1]: 
-        plt.figure(figsize=(16, 8))
-        recon_neg_2(p, its, k * katz_num_angles)
+    # for k in [0.25, 0.5, 0.75, 1]: 
+    #     plt.figure(figsize=(16, 8))
+    #     recon_neg_2(p, its, np.floor(k * katz_num_angles))
 
-    for k in [0.25, 0.5, 0.75, 1]: 
+    for k in [0.25, 0.5, 0.75, 1]: #you need to check these angles are making sense, also probs do more 0.9 - 1.1 angles and see how it changes 
         path = "results_CT/recon_neg_2/FBP_ChaoS_num_angles_{}.npz".format(k * katz_num_angles)
-        plot_neg_2(path, k * katz_num_angles)
+        # plot_neg_2(path, k * katz_num_angles)
+        data = np.load(path)["data"].item()
+        plot_recon(data["no noise"]["rmse"], data["no noise"]["psnr"], data["no noise"]["ssim"], label="ChoaS no noise", colour="hotpink")
+        plot_recon(data["noise"]["rmse"], data["noise"]["psnr"], data["noise"]["ssim"], label="ChoaS noise", colour="hotpink", line='--')
+        plot_recon(data["FBP no noise"]["rmse"], data["FBP no noise"]["psnr"], data["FBP no noise"]["ssim"], label="FBP no noise", colour="mediumpurple")
+        plot_recon(data["FBP noise"]["rmse"], data["FBP noise"]["psnr"], data["FBP noise"]["ssim"], label="FBP noise", colour="mediumpurple", line='--')
+        # plt.suptitle("num projs: " + str(num_angles))
+
+
+def exp_2(run): 
+    """Evidence importance of prime numbers in reconstruction as compared to 
+    composite. 
+    Run for both no noise and noise. 
+
+    Want to find when prime 
+    """
+    if run: 
+        p = nt.nearestPrime(N)
+        for noisy in (True, False): 
+            plt.figure(figsize=(16, 8))
+            recon_1(p, ITERATIONS, recon_type=CT_RECON, noisy=noisy)
+    else: 
+        for noisy in (True, False):
+            path = get_path(CT_RECON, 1, KATZ_ANGLES, ITERATIONS, noisy=noisy)
+            plot_recon_1(path, noisy)
+
+
+def exp_2_1(run):
+    """From exp_2, we know that primes are important, but in that scenario, we 
+    still have more prime projections than composite - what happens as the 
+    number of porjections increase and hence the ration of composites to prime. 
+    We assume that the reconstruction with the most projections should produce 
+    the best results, so we excpect the composite reconstruction to out do the 
+    prime. 
+    Here we test this theory for some multiple of the Kazt criterion. 
+    """ 
+    if run:
+        p = nt.nearestPrime(N)
+        for noisy in (True, False): 
+            angles, _ = angleSubSets_Symmetric(s,subsetsMode,N,N,K=K, max_angles=KATZ_ANGLES) 
+            katz_num_angles = len(angles)
+            plt.figure(figsize=(16, 8))
+            recon_1(p, ITERATIONS, recon_type=CT_RECON, noisy=True, num_angles=10*katz_num_angles)
+    else: 
+        for noisy in (True, False): 
+            path = get_path(CT_RECON, 1, len(angles), ITERATIONS, noisy=noisy)
+            plot_recon_1(path, noisy)
+
+
+
+
+def exp_3(run):
+    """If prime angles are key to reconstruction, what happens when we replace 
+    composite numbers with primes which are very close. 
+
+    Compare this with the regular reconstruction. 
+    """
+    pass
+    # angles, _ = angleSubSets_Symmetric(s,subsetsMode,N,N,K=K, max_angles=KATZ_ANGLES) 
+    # katz_num_angles = len(angles)
+    # plt.figure(figsize=(16, 8))
+    # recon_1(p, ITERATIONS, recon_type=CT_RECON, noisy=True, num_angles=5*katz_num_angles)
 
 
 #Shes a runner shes a track star -----------------------------------------------
+RUN = True
+PLOT = False
 if __name__ == "__main__": 
-    p = nt.nearestPrime(N)
-    exp_0()
+    exp_2_1(RUN)
 
     # # regular_recon(p, -1, ITERATIONS, CT_RECON, colour="hotpink", line="--")
     # angles, subsetAngles = angleSubSets_Symmetric(s,subsetsMode,p,p,octant=FIRST_QUAD,K=K, max_angles=-1)  

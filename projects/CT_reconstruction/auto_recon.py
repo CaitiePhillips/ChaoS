@@ -418,14 +418,14 @@ def plot_angles(angles, colour='skyblue', line='-', linewidth=1, label="angles",
         ax.plot([0, real], [0, imag], line, c=colour, linewidth=linewidth, label=label)
 
 # FBP --------------------------------------------------------------------------
-def fbp(p, num_angles, noisy=False):
+def fbp(p, num_angles, noisy=False, snr=SNR_CT):
     image = imread(sk.data_dir + "/phantom.png", as_grey=True)
     image = tfm.rescale(image, scale = float(p) / 400, mode='constant')
     theta = np.linspace(0., 180., num_angles, endpoint=True)
     sinogram = tfm.radon(image, theta=theta, circle=True)
 
     if noisy: 
-        add_noise(sinogram, snr=SNR_CT)
+        add_noise(sinogram, snr=snr)
 
     data = {}
 
@@ -452,14 +452,14 @@ def fbp(p, num_angles, noisy=False):
     return reconstruction_fbp, rmse_fbp, psnr_fbp, ssim_fbp
 
 
-def fbp_sart(p, num_angles, noisy=False):
+def fbp_sart(p, num_angles, noisy=False, snr=SNR_CT):
     image = imread(sk.data_dir + "/phantom.png", as_grey=True)
     image = tfm.rescale(image, scale = float(p) / 400, mode='constant')
     theta = np.linspace(0., 180., num_angles, endpoint=True)
     sinogram = tfm.radon(image, theta=theta, circle=True)
 
     if noisy: 
-        add_noise(sinogram, snr=SNR_CT)
+        add_noise(sinogram, snr=snr)
 
     data = {}
 
@@ -649,7 +649,7 @@ def osem_expand(iterations, p, g_j, os_mValues, projector, backprojector,
     return f, mses, psnrs, ssims
 
 
-def recon_CT(p, angles, subsetAngles, iterations, noisy=False): 
+def recon_CT(p, angles, subsetAngles, iterations, noisy=False, snr=SNR_CT): 
 
     lena, mask = imageio.phantom(N, p, True, np.uint32, True)
     
@@ -672,7 +672,7 @@ def recon_CT(p, angles, subsetAngles, iterations, noisy=False):
     
     #add noise 
     if noisy:
-        add_noise(mt_lena, SNR_CT) 
+        add_noise(mt_lena, snr) 
 
     rt_lena = mojette.toDRT(mt_lena, angles, p, p, p) 
     
@@ -825,7 +825,7 @@ def recon_MRI(p, angles, subsetAngles, iterations, noisy=False):
 
 
 # base angle set reconstructions -----------------------------------------------
-def regular_recon(p, angles, subsetAngles, iterations, recon_type=MRI_RECON, colour="hotpink", line="-", noisy=False, s=12, K=0.4):
+def regular_recon(p, angles, subsetAngles, iterations, recon_type=MRI_RECON, colour="hotpink", line="-", noisy=False, s=s, K=K, snr=SNR_CT):
     """Completes one MRI or CT reconstruction. Plots error info. 
 
     Args:
@@ -852,7 +852,7 @@ def regular_recon(p, angles, subsetAngles, iterations, recon_type=MRI_RECON, col
     # if recon_type == CT_RECON: 
     #     angles, subsetAngles = extend_quadrant(subsetAngles)
 
-    recon_im, rmses, psnrs, ssims = recon_CT(p, angles, remove_empty(subsetAngles), iterations, noisy)
+    recon_im, rmses, psnrs, ssims = recon_CT(p, angles, remove_empty(subsetAngles), iterations, noisy, snr=snr)
     # plot_recon(rmses, psnrs, ssims, colour=colour, line=line, label="regular recon, " + str(num_angles_ct) + " projections") #normal
     plot_recon(rmses, psnrs, ssims, colour=colour, line=line, label=title + ", " + str(len(angles)) + " projections")
 
@@ -861,7 +861,7 @@ def regular_recon(p, angles, subsetAngles, iterations, recon_type=MRI_RECON, col
     return angles, recon_im, rmses, psnrs, ssims
 
 
-def prime_recon(p, angles, subset_angles, iterations, recon_type=MRI_RECON, colour="skyblue", line="-", noisy=False): 
+def prime_recon(p, angles, subset_angles, iterations, recon_type=MRI_RECON, colour="skyblue", line="-", noisy=False, snr=SNR_CT): 
     """Completes one MRI or CT reconstruction with only the prime angle set. 
     Plots error info. 
 
@@ -877,13 +877,13 @@ def prime_recon(p, angles, subset_angles, iterations, recon_type=MRI_RECON, colo
 
     # angles, subset_angles = angleSubSets_Symmetric(s,subsetsMode,N,N,K=K, max_angles=num_angles) 
     primes, primes_subset = get_primes(subset_angles)
-    recon_im, rmses, psnrs, ssims = recon_CT(p, primes, remove_empty(primes_subset), iterations, noisy)
+    recon_im, rmses, psnrs, ssims = recon_CT(p, primes, remove_empty(primes_subset), iterations, noisy, snr=snr)
     plot_recon(rmses, psnrs, ssims, colour=colour, line=line, label="Prime subset, " + str(len(primes)) + " projections")
 
     return primes, recon_im, rmses, psnrs, ssims
 
 
-def composite_recon(p, angles, subset_angles, iterations, recon_type=MRI_RECON, colour="mediumpurple", line="-", noisy=False): 
+def composite_recon(p, angles, subset_angles, iterations, recon_type=MRI_RECON, colour="mediumpurple", line="-", noisy=False, snr=SNR_CT): 
     """Completes one MRI or CT reconstruction with only the composite angle set. 
     Plots error info. 
 
@@ -904,7 +904,7 @@ def composite_recon(p, angles, subset_angles, iterations, recon_type=MRI_RECON, 
 
     # angles, subset_angles = angleSubSets_Symmetric(s,subsetsMode,N,N,K=K, max_angles=num_angles) 
     comps, comps_subset = get_composites(subset_angles)
-    recon_im, rmses, psnrs, ssims = recon_CT(p, comps, remove_empty(comps_subset), iterations, noisy)
+    recon_im, rmses, psnrs, ssims = recon_CT(p, comps, remove_empty(comps_subset), iterations, noisy, snr=snr)
     plot_recon(rmses, psnrs, ssims, colour=colour, line=line, label="Composite subset, " + str(len(comps)) + " projections")
 
     return comps, recon_im, rmses, psnrs, ssims
@@ -1328,7 +1328,7 @@ def recon_1b(p, iterations, recon_type=MRI_RECON, noisy=False):
     plt.savefig(path + ".png")
 
 
-def recon_1c(p, iterations, recon_type=MRI_RECON, noisy=False):
+def recon_1c(p, iterations, recon_type=MRI_RECON, noisy=False, snr=SNR_CT):
     # title = "CT prime reconstruction" + (" (noisy)" if noisy else "")
     data = {}
 
@@ -1336,26 +1336,26 @@ def recon_1c(p, iterations, recon_type=MRI_RECON, noisy=False):
     # angles, subsetAngles = extend_quadrant(subsetAngles)
 
     #normal prime recon
-    angles_reg, recon, rmses, psnrs, ssims = regular_recon(p, list(angles), list(subsetAngles), iterations, recon_type, noisy=noisy, colour="hotpink")
+    angles_reg, recon, rmses, psnrs, ssims = regular_recon(p, list(angles), list(subsetAngles), iterations, recon_type, noisy=noisy, colour="hotpink", snr=snr)
     data["regular"] = {"angles": angles_reg, "recon": recon, "rmse": rmses, "psnr": psnrs, "ssim": ssims, "noise":noisy, "SNR": SNR_CT}
-    angles_prime_subset, recon, rmses, psnrs, ssims = prime_recon(p, list(angles), list(subsetAngles), iterations, recon_type, noisy=noisy, colour="skyblue")
+    angles_prime_subset, recon, rmses, psnrs, ssims = prime_recon(p, list(angles), list(subsetAngles), iterations, recon_type, noisy=noisy, colour="skyblue", snr=snr)
     data["prime_subset"] = {"angles": angles_prime_subset, "recon": recon, "rmse": rmses, "psnr": psnrs, "ssim": ssims, "noise":noisy, "SNR": SNR_CT}
 
     #prime recon satisfying Kazt 
     primes, primes_subsets = angleSubSets_Symmetric(s,subsetsMode,N,N,K=K, max_angles=KATZ_ANGLES, prime_only=True) 
-    recon, rmses, psnrs, ssims = recon_CT(p, primes, remove_empty(primes_subsets), iterations, noisy)
+    recon, rmses, psnrs, ssims = recon_CT(p, primes, remove_empty(primes_subsets), iterations, noisy, snr=snr)
     data["prime_katz"] = {"angles": primes, "recon": recon, "rmse": rmses, "psnr": psnrs, "ssim": ssims, "noise":noisy, "SNR": SNR_CT}
     plot_recon(rmses, psnrs, ssims, colour="mediumpurple", label="Prime angle set " + str(len(primes)) + " projections")
 
     #rergular with same length as prime katz
     angles, subsetAngles = angleSubSets_Symmetric(s,subsetsMode,p,p,K=K, max_angles=len(primes))  
-    angles, recon, rmses, psnrs, ssims = regular_recon(p, angles, subsetAngles, iterations, recon_type, noisy=noisy, colour="orange")
+    angles, recon, rmses, psnrs, ssims = regular_recon(p, angles, subsetAngles, iterations, recon_type, noisy=noisy, colour="orange", snr=snr)
     data["regular_prime_len"] = {"angles": angles, "recon": recon, "rmse": rmses, "psnr": psnrs, "ssim": ssims, "noise":noisy, "SNR": SNR_CT}
     
 
 
     #fbp
-    recon_im_fbp_noisy, rmse, psnr, ssim = fbp(p, len(primes), noisy=noisy)
+    recon_im_fbp_noisy, rmse, psnr, ssim = fbp(p, len(primes), noisy=noisy, snr=snr)
     rmses = rmse * np.ones_like(rmses)
     psnrs = psnr * np.ones_like(psnrs)
     ssims = ssim * np.ones_like(ssims)
@@ -1363,14 +1363,14 @@ def recon_1c(p, iterations, recon_type=MRI_RECON, noisy=False):
     plot_recon(rmses, psnrs, ssims, colour="limegreen", label="FBP " + str(len(primes)) + " projections")
 
     #fbp
-    recon_im_fbp_sart_noisy, rmse, psnr, ssim = fbp_sart(p, len(primes), noisy=noisy)
+    recon_im_fbp_sart_noisy, rmse, psnr, ssim = fbp_sart(p, len(primes), noisy=noisy, snr=snr)
     rmses = rmse * np.ones_like(rmses)
     psnrs = psnr * np.ones_like(psnrs)
     ssims = ssim * np.ones_like(ssims)
     data["FBPSART"] = {"recon": recon_im_fbp_sart_noisy, "rmse": rmses, "psnr": psnrs, "ssim": ssims, "noise":noisy, "SNR": SNR_CT}
     plot_recon(rmses, psnrs, ssims, colour="limegreen", label="FBP SART " + str(len(primes)) + " projections")
 
-    snr = SNR_CT*100 if noisy else 100
+    snr = snr*100 if noisy else 100
     path = get_path(recon_type, "1c", KATZ_ANGLES, iterations, noisy, snr=int(snr))
     np.savez(file=path, data=data)
     
@@ -1398,7 +1398,7 @@ def plot_recon(rmseValues, psnrValues, ssimValues, colour = "b", line = '-', lab
     # plt.title('PSNR Convergence of the Finite OSEM', fontsize=20)
     plt.xlabel('Iterations', fontsize=16)
     plt.ylabel('PSNR', fontsize=16)
-    plt.legend(fontsize=16)
+    # plt.legend(fontsize=16)
 
     # plt.suptitle("Convergence of the Finite OSEM", fontsize=16)
     
@@ -1525,15 +1525,15 @@ def plot_recon_1c(path, noisy):
     #            line = line,
     #            label="ChaoS Reconstruction {}".format("(noisy) " if noisy else "") + str(len(regular_prime_len["angles"])) + " projections")
     
-    plot_recon(fbp["rmse"], fbp["psnr"], fbp["ssim"], 
-               colour = next(colour), 
-               line = "-",
-               label="FBP Reconstruction {}".format("(noisy) " if noisy else "") + str(len(prime_kazt["angles"])) + " projections")
+    # plot_recon(fbp["rmse"], fbp["psnr"], fbp["ssim"], 
+    #            colour = next(colour), 
+    #            line = "-",
+    #            label="FBP Reconstruction {}".format("(noisy) " if noisy else "") + str(len(prime_kazt["angles"])) + " projections")
     
-    plot_recon(fbp_sart["rmse"], fbp_sart["psnr"], fbp_sart["ssim"], 
-               colour = next(colour), 
-               line = "-",
-               label="FBP (SART) Reconstruction {}".format("(noisy) " if noisy else "") + str(len(prime_kazt["angles"])) + " projections")
+    # plot_recon(fbp_sart["rmse"], fbp_sart["psnr"], fbp_sart["ssim"], 
+            #    colour = next(colour), 
+            #    line = "-",
+            #    label="FBP (SART) Reconstruction {}".format("(noisy) " if noisy else "") + str(len(prime_kazt["angles"])) + " projections")
 
     # plotFractal(prime_kazt["angles"], CT_RECON, title="prime_katz")
     # # plt.suptitle("Prime Katz")
@@ -1829,11 +1829,35 @@ def exp_5(run):
 
 def exp_5b(run): 
     """test out how bas the noise can for prime recon"""
-    p = nt.nearestPrime(N)
-    recon_1c(p, ITERATIONS, recon_type=CT_RECON, noisy=False)
-    for SNR_CT in [0.95, 0.90, 0.85, 0.80]: 
-        recon_1c(p, ITERATIONS, recon_type=CT_RECON, noisy=True)
-    SNR = 0.95
+    if run: 
+        p = nt.nearestPrime(N)
+        # recon_1c(p, ITERATIONS, recon_type=CT_RECON, noisy=False)
+        for snr in [0.92, 0.94, 0.96, 0.98]: 
+            recon_1c(p, ITERATIONS, recon_type=CT_RECON, noisy=True, snr=snr)
+    else:
+        colour=iter(plt.cm.rainbow(np.linspace(0,1,7)))
+        for snr in [1, 0.98, 0.96, 0.94, 0.92, 0.90]:
+            noisy = True if snr != 1 else False
+            # line = '-' if not noisy else "--"      
+
+            path = get_path(CT_RECON, "1c", KATZ_ANGLES, ITERATIONS, noisy, snr=int(100 * snr))
+            data = np.load(path)["data"].item()
+            prime_kazt = data["prime_katz"]
+            reg = data["regular"]
+
+            c = next(colour)
+    
+            plot_recon(prime_kazt["rmse"], prime_kazt["psnr"], prime_kazt["ssim"], 
+                    colour = c, 
+                    line = "--",
+                    label="Prime Reconstruction {}".format("(noisy) " if noisy else "") + str(len(prime_kazt["angles"])) + " projections")
+            
+            plot_recon(reg["rmse"], reg["psnr"], reg["ssim"], 
+                    colour = c, 
+                    line = "-",
+                    label="ChaoS Reconstruction {}".format("(noisy) " if noisy else "") + str(len(reg["angles"])) + " projections")
+            
+
 
 def exp_6(run): 
     
@@ -2043,7 +2067,6 @@ UQ_RED = "#e62645"
 UQ_BLUE = "#4085c6"
 UQ_YELLOW = "#fbb800"
 if __name__ == "__main__": 
-    pass
     # p = nt.nearestPrime(N)
     # mri_ct()
     # final_prime_set(PLOT)
@@ -2064,7 +2087,10 @@ if __name__ == "__main__":
     # exp_5(RUN)
     # exp_5(PLOT)
 
-    exp_5b(RUN)
+    #run prime katz with chaanging noise
+    # exp_5b(RUN)
+    exp_5b(PLOT)
+
     # exp_7(PLOT)
 
     # exp_2_1(PLOT)

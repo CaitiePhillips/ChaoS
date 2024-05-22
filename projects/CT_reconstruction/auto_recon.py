@@ -651,9 +651,9 @@ def osem_expand(iterations, p, g_j, os_mValues, projector, backprojector,
 
 def recon_CT(p, angles, subsetAngles, iterations, noisy=False, snr=SNR_CT): 
 
-    # lena, mask = imageio.phantom(N, p, True, np.uint32, True)
+    lena, mask = imageio.phantom(N, p, True, np.uint32, True)
     
-    lena, mask = imageio.cameraman(N, p, True, np.uint32, True)
+    # lena, mask = imageio.cameraman(N, p, True, np.uint32, True)
 
 
     #get half plane of angles
@@ -1378,31 +1378,32 @@ def recon_1c(p, iterations, recon_type=CT_RECON, noisy=False, snr=SNR_CT):
     np.savez(file=path, data=data)
     
 # plotters ---------------------------------------------------------------------
-def plot_recon(rmseValues, psnrValues, ssimValues, colour = "b", line = '-', label="label", max_it = -1):
+def plot_recon(rmseValues, psnrValues, ssimValues, axs, colour = "b", line = '-', label="label", max_it = -1):
+    [rmse_ax, ssim_ax, psnr_ax] = axs
+
     incX = np.arange(0, len(rmseValues[:max_it]))*plotIncrement
-
-    plt.subplot(1, 3, 1)
-    plt.plot(incX, rmseValues[:max_it], c=colour, ls=line, label=label)
+    # plt.subplot(1, 3, 1)
+    rmse_ax.plot(incX, rmseValues[:max_it], c=colour, ls=line, label=label)
     # plt.title('Error Convergence of the Finite OSEM', fontsize=20)
-    plt.xlabel('Iterations', fontsize=16)
-    plt.ylabel('RMSE', fontsize=16)
+    rmse_ax.set_xlabel('Iterations', fontsize=16)
+    rmse_ax.set_ylabel('RMSE', fontsize=16)
 
-    plt.subplot(1, 3, 2)
-    plt.plot(incX, ssimValues[:max_it], c=colour, ls=line, label=label)
-    plt.ylim(0, 1.0)
+    ssim_ax.plot(incX, ssimValues[:max_it], c=colour, ls=line, label=label)
+    ssim_ax.set_ylim([0, 1.0])
     # plt.title('Simarlity Convergence of the Finite OSEM', fontsize=20)
-    plt.xlabel('Iterations', fontsize=16)
-    plt.ylabel('SSIM', fontsize=16)
+    ssim_ax.set_xlabel('Iterations', fontsize=16)
+    ssim_ax.set_ylabel('SSIM', fontsize=16)
 
-    plt.subplot(1, 3, 3)
-    plt.plot(incX, psnrValues[:max_it], c=colour, ls=line, label=label)
-    plt.ylim(0, 60)
+    psnr_ax.plot(incX, psnrValues[:max_it], c=colour, ls=line, label=label)
+    psnr_ax.set_ylim([0, 60])
     # plt.title('PSNR Convergence of the Finite OSEM', fontsize=20)
-    plt.xlabel('Iterations', fontsize=16)
-    plt.ylabel('PSNR', fontsize=16)
-    plt.legend()
+    psnr_ax.set_xlabel('Iterations', fontsize=16)
+    psnr_ax.set_ylabel('PSNR', fontsize=16)
+    # plt.legend(fontsize=20)
 
-    # plt.suptitle("Convergence of the Finite OSEM", fontsize=16)
+    
+    # plt.tight_layout(rect=[0, 0.1, 1, 0.95])
+
     
 
 def plot_neg_2(path, num_angles): 
@@ -1439,7 +1440,7 @@ def plot_neg_2(path, num_angles):
     plt.suptitle("num projs: " + str(num_angles))
 
 
-def plot_recon_1(path, noisy, colours = None): 
+def plot_recon_1(path, noisy, axs, colours = None): 
     """Plots reg and prime recons for increasing number of angles for octant. 
     """
     # line = "--" if noisy else "-"
@@ -1450,17 +1451,17 @@ def plot_recon_1(path, noisy, colours = None):
     comp_recon = data["composite"]
     fbp_recon = data["FBP"]
 
-    plot_recon(reg_recon["rmse"], reg_recon["psnr"], reg_recon["ssim"], 
+    plot_recon(reg_recon["rmse"], reg_recon["psnr"], reg_recon["ssim"], axs,
                colour = REGULAR if colours == None else colours[0], 
                line = line,
                label=r"ChaoS angleset {}".format("(noisy) " if noisy else "") + " projections", max_it=400)#+ r"||$\Theta$|| = " + str(len(reg_recon["angles"])))
     
-    plot_recon(prime_recon["rmse"], prime_recon["psnr"], prime_recon["ssim"], 
+    plot_recon(prime_recon["rmse"], prime_recon["psnr"], prime_recon["ssim"], axs,
                colour = PRIME if colours == None else colours[1], 
                line = line,
                label="Prime subset {}".format("(noisy) " if noisy else "") + " projections", max_it=400)# + r"||$\Theta$|| = " + str(len(prime_recon["angles"])))
     
-    plot_recon(comp_recon["rmse"], comp_recon["psnr"], comp_recon["ssim"], 
+    plot_recon(comp_recon["rmse"], comp_recon["psnr"], comp_recon["ssim"], axs,
                colour = COMPOSITE if colours == None else colours[2], 
                line = line,
                label="Composite subset {}".format("(noisy) " if noisy else "") + " projections", max_it=400)#+ r"||$\Theta$|| = " + str(len(comp_recon["angles"])))
@@ -1495,7 +1496,7 @@ def plot_recon_1b(path):
                    colour = c, line="--", label="prime, " + str(num_angles) + " projs")
     
 
-def plot_recon_1c(path, noisy, colours = None): 
+def plot_recon_1c(path, noisy, axs, colours = None): 
     # line = "--" if noisy else "-"
     line = '-' if not noisy else "--"
     data = np.load(path)["data"].item()
@@ -1507,21 +1508,22 @@ def plot_recon_1c(path, noisy, colours = None):
     fbp_sart_recon = data["FBPSART"]
     colour=iter(plt.cm.rainbow(np.linspace(0,1,4)))
 
-    plot_recon(reg["rmse"], reg["psnr"], reg["ssim"], 
+    plot_recon(reg["rmse"], reg["psnr"], reg["ssim"], axs, 
                colour = next(colour), 
-               line = "-",
-               label="ChaoS Reconstruction {}".format("(noisy) " if noisy else "") + str(len(reg["angles"])) + " projections")
+               line = line,
+               label="ChaoS angle set " + ("(noise) " if noisy else "") + str(len(reg["angles"])) + " projections")
     
-    plot_recon(prime_subset["rmse"], prime_subset["psnr"], prime_subset["ssim"], 
+    plot_recon(prime_subset["rmse"], prime_subset["psnr"], prime_subset["ssim"], axs, 
                colour = next(colour), 
-               line = "-",
-               label="CT prime subset reconstruction {}".format("(noisy) " if noisy else "") + str(len(prime_subset["angles"])) + " projections")
+               line = line,
+               label="Prime subset " + ("(noise) " if noisy else "") + str(len(prime_subset["angles"])) + " projections")
     
-    plot_recon(prime_kazt["rmse"], prime_kazt["psnr"], prime_kazt["ssim"], 
+    plot_recon(prime_kazt["rmse"], prime_kazt["psnr"], prime_kazt["ssim"], axs, 
                colour = next(colour) if colours == None else colours[0], 
                line = line,
-               label="Prime angle set {}".format("(noisy) " if noisy else "") + str(len(prime_kazt["angles"])) + " projections")#+ r"||$\Theta$|| = " + str(len(prime_kazt["angles"])))
-    
+               label="Prime angle set " + ("(noise) " if noisy else "") + str(len(prime_kazt["angles"])) + " projections")#+ r"||$\Theta$|| = " + str(len(prime_kazt["angles"])))
+
+
     # plot_recon(regular_prime_len["rmse"], regular_prime_len["psnr"], regular_prime_len["ssim"], 
     #            colour = next(colour), 
     #            line = line,
@@ -1711,45 +1713,104 @@ def exp_2(run):
                 plt.figure(figsize=(16, 8))
                 recon_1(p, ITERATIONS, recon_type=CT_RECON, noisy=noisy, num_angles=c * katz_len)
     else: 
-        #plot errors
+
         for c in [0.5, 1, 2, 4]:
-            plt.figure(figsize=(16, 8))
-            plt.suptitle(str(c) + " x Katz angles", fontsize=20)
-            for noisy in (True, False):
-                path = get_path(CT_RECON, 1, c * katz_len, ITERATIONS, noisy=noisy)
-                plot_recon_1(path, noisy)
 
-        #plot recons
-        fig, axs = plt.subplots(2, 5, sharex=True, sharey=True, squeeze=True, figsize=(40, 16))
-        axs = axs.flat
+            #set up plots
+            err_fig, err_axs = plt.subplots(1, 3)
+            err_fig.suptitle(str(c) + " x Katz angles", 
+                             fontsize=TITLE_FONT_SIZE)
 
-        #regular
-        for noisy in (True, False):
-            path = get_path(CT_RECON, 1, 1 * katz_len, ITERATIONS, noisy=noisy)
-            data = np.load(path)["data"].item()
-            reg_recon = data["regular"]["recon"]
-            axs[5 if noisy else 0].imshow(reg_recon, cmap="gray")
-            axs[5 if noisy else 0].set_axis_off()
-        
-        #primes
-        for i, c in enumerate([0.5, 1, 2, 4]):
-            for noisy in (True, False):
+            recon_fig, recon_axs = plt.subplots(2, 3)
+            recon_fig.suptitle(str(c) + " x Katz Reconstructions", 
+                               fontsize=TITLE_FONT_SIZE)
+
+            #set up labels
+            recon_axs[0][0].set_ylabel("No noise")
+            recon_axs[1][0].set_ylabel("Noise")
+            recon_axs[1][0].set_xlabel("Regular angle set")
+            recon_axs[1][1].set_xlabel("Prime angle set")
+            recon_axs[1][2].set_xlabel("Composite angle set")
+
+            recon_axs = recon_axs.flat
+            # for ax in recon_axs: 
+            #     ax.set_axis_off()
+
+            frac_fig, frac_axs = plt.subplots(1, 3)
+            frac_fig.suptitle(str(c) + " x Katz Fractals", 
+                              fontsize=TITLE_FONT_SIZE)
+            # for ax in frac_axs: 
+            #     ax.set_axis_off()
+
+
+            for a, noisy in enumerate((False, True)):
+                #plot errors
                 path = get_path(CT_RECON, 1, c * katz_len, ITERATIONS, noisy=noisy)
+                plot_recon_1(path, noisy, err_axs)
+
+                #plot recons
                 data = np.load(path)["data"].item()
-                prime_recon = data["prime"]["recon"]
-                # axs[i + 1].set_title(str(c) + " x Katz")
-                axs[(i + 5 if noisy else i) + 1].imshow(prime_recon, cmap="gray")
-                axs[(i + 5 if noisy else i) + 1].set_axis_off()
+                recon_axs[0 + 3 * a].imshow(data["regular"]["recon"], cmap='gray')
+                recon_axs[1 + 3 * a].imshow(data["prime"]["recon"], cmap='gray')
+                recon_axs[2 + 3 * a].imshow(data["composite"]["recon"], cmap='gray')
 
-        fig, axs = plt.subplots(1, 2, sharex=True, sharey=True, squeeze=True)
-        path = get_path(CT_RECON, 1, 1 * katz_len, ITERATIONS, noisy=noisy)
-        data = np.load(path)["data"].item()
-        # prime_recon = data["prime"]["angles"]
-        plotFractal(p, data["prime"]["angles"], CT_RECON, axs[0], "Prime subset")
-        axs[0].set_axis_off()
-        # prime_recon = data["composite"]["angles"]
-        plotFractal(p, data["composite"]["angles"], CT_RECON, axs[1], "Composite subset")
-        axs[1].set_axis_off()
+                #plot fractals
+                if noisy: #only plot once
+                    frac_axs[0].set_title("Regular angle set")
+                    plotFractal(p, data["regular"]["angles"], CT_RECON, frac_axs[0], "Prime subset")
+                    frac_axs[1].set_title("Prime angle set")
+                    plotFractal(p, data["prime"]["angles"], CT_RECON, frac_axs[1], "Prime subset")
+                    frac_axs[2].set_title("Composite angle set")
+                    plotFractal(p, data["composite"]["angles"], CT_RECON, frac_axs[2], "Prime subset")
+                    
+            handles, labels = err_axs[0].get_legend_handles_labels()
+            err_fig.legend(handles, labels, loc='lower center', ncol = 3, 
+                           fontsize=LABEL_FONT_SIZE)
+            err_fig.subplots_adjust(left=0.05, right=0.950, top=0.935, bottom=0.115)
+            
+
+
+        #     # plt.tight_layout(rect=[0.05, 0.115, 0.950, 0.935])
+
+            
+        #     for a, noisy in enumerate([True, False]):
+        #         path = get_path(CT_RECON, 1, c * katz_len, ITERATIONS, noisy=noisy)
+        #         plot_recon_1(path, noisy, err_axs)
+
+
+        # #plot recons
+        # fig, axs = plt.subplots(2, 5, sharex=True, sharey=True, squeeze=True, figsize=(40, 16))
+        # axs = axs.flat
+
+        # #regular
+        # for noisy in (True, False):
+        #     path = get_path(CT_RECON, 1, 1 * katz_len, ITERATIONS, noisy=noisy)
+        #     data = np.load(path)["data"].item()
+        #     reg_recon = data["regular"]["recon"]
+        #     axs[5 if noisy else 0].imshow(reg_recon, cmap="gray")
+        #     axs[5 if noisy else 0].set_axis_off()
+        
+        # #primes
+        # for i, c in enumerate([0.5, 1, 2, 4]):
+        #     for noisy in (True, False):
+        #         path = get_path(CT_RECON, 1, c * katz_len, ITERATIONS, noisy=noisy)
+        #         data = np.load(path)["data"].item()
+        #         prime_recon = data["prime"]["recon"]
+        #         # axs[i + 1].set_title(str(c) + " x Katz")
+        #         axs[(i + 5 if noisy else i) + 1].imshow(prime_recon, cmap="gray")
+        #         axs[(i + 5 if noisy else i) + 1].set_axis_off()
+
+
+        # #plot fractals
+        # fig, axs = plt.subplots(1, 2, sharex=True, sharey=True, squeeze=True)
+        # path = get_path(CT_RECON, 1, 1 * katz_len, ITERATIONS, noisy=noisy)
+        # data = np.load(path)["data"].item()
+        # # prime_recon = data["prime"]["angles"]
+        # plotFractal(p, data["prime"]["angles"], CT_RECON, axs[0], "Prime subset")
+        # axs[0].set_axis_off()
+        # # prime_recon = data["composite"]["angles"]
+        # plotFractal(p, data["composite"]["angles"], CT_RECON, axs[1], "Composite subset")
+        # axs[1].set_axis_off()
 
 
 def exp_2_1(run):
@@ -1825,10 +1886,37 @@ def exp_5(run):
             recon_1c(p, ITERATIONS, recon_type=CT_RECON, noisy=noisy)
 
     else: 
-        for noisy in (True, False): 
-        # noisy = False
+        #set up plots
+        err_fig, err_axs = plt.subplots(1, 3)
+        title = "Prime angle set comparison" 
+        err_fig.suptitle(title, fontsize = TITLE_FONT_SIZE)
+
+        recon_fig, recon_axs = plt.subplots(2, 3)
+        recon_fig.suptitle(title, fontsize=TITLE_FONT_SIZE)
+        #set up labels
+        recon_axs[0][0].set_ylabel("No noise")
+        recon_axs[1][0].set_ylabel("Noise")
+        recon_axs[1][0].set_xlabel("Regular angle set")
+        recon_axs[1][1].set_xlabel("Prime angle subset")
+        recon_axs[1][2].set_xlabel("Prime angle set")
+        recon_axs = recon_axs.flat
+
+        for a, noisy in enumerate((True, False)): 
             path = get_path(CT_RECON, "1c", KATZ_ANGLES, ITERATIONS, noisy)
-            plot_recon_1c(path, noisy)
+            plot_recon_1c(path, noisy, err_axs)
+
+            handles, labels = err_axs[0].get_legend_handles_labels()
+            
+            #plot recons
+            data = np.load(path)["data"].item()
+            recon_axs[0 + 3 * a].imshow(data["regular"]["recon"], cmap='gray')
+            recon_axs[1 + 3 * a].imshow(data["prime_subset"]["recon"], cmap='gray')
+            recon_axs[2 + 3 * a].imshow(data["prime_katz"]["recon"], cmap='gray')
+
+        err_fig.legend(handles, labels, fontsize = LABEL_FONT_SIZE, 
+                           loc='lower center', ncol = 3)
+        err_fig.subplots_adjust(left=0.05, right=0.950, top=0.935, bottom=0.115)
+            
 
 
 def exp_5b(run): 
@@ -1839,10 +1927,25 @@ def exp_5b(run):
         for snr in [0.92, 0.94, 0.96, 0.98]: 
             recon_1c(p, ITERATIONS, recon_type=CT_RECON, noisy=True, snr=snr)
     else:
+        #set up plots
+        err_fig, err_axs = plt.subplots(1, 3)
+        title = "Regular and Prime angle set noise response" 
+        err_fig.suptitle(title, fontsize = TITLE_FONT_SIZE)
+        
+        prime_recon_fig, prime_recon_axs = plt.subplots(2, 3)
+        prime_recon_fig.suptitle("Prime angle set reconstruction", 
+                                 fontsize=TITLE_FONT_SIZE)
+        prime_recon_axs = prime_recon_axs.flat
+        prime_recon_fig.suptitle("Regular angle set reconstruction", 
+                                 fontsize=TITLE_FONT_SIZE)
+
+
+        reg_recon_fig, reg_recon_axs = plt.subplots(2, 3)
+        reg_recon_axs = reg_recon_axs.flat
+
         colour=iter(plt.cm.rainbow(np.linspace(0,1,7)))
-        for snr in [1, 0.98, 0.96, 0.94, 0.92, 0.90]:
+        for a, snr in enumerate([1, 0.98, 0.96, 0.94, 0.92, 0.90]):
             noisy = True if snr != 1 else False
-            # line = '-' if not noisy else "--"      
 
             path = get_path(CT_RECON, "1c", KATZ_ANGLES, ITERATIONS, noisy, snr=int(100 * snr))
             data = np.load(path)["data"].item()
@@ -1851,15 +1954,28 @@ def exp_5b(run):
 
             c = next(colour)
     
-            plot_recon(prime_kazt["rmse"], prime_kazt["psnr"], prime_kazt["ssim"], 
+            plot_recon(prime_kazt["rmse"], prime_kazt["psnr"], prime_kazt["ssim"], axs=err_axs,
                     colour = c, 
                     line = "--",
                     label=str(100 * (1 - snr)) + "% noise, Prime, " + str(len(prime_kazt["angles"])) + " projections")
             
-            plot_recon(reg["rmse"], reg["psnr"], reg["ssim"], 
+            plot_recon(reg["rmse"], reg["psnr"], reg["ssim"], axs=err_axs,
                     colour = c, 
                     line = "-",
                     label=str(100 * (1 - snr)) + "% noise, Regular, " + str(len(reg["angles"])) + " projections")
+            
+            #plot recons
+            prime_recon_axs[a].imshow(prime_kazt["recon"], cmap='gray')
+            prime_recon_axs[a].set_xlabel(str(100 * (1 - snr)) + "% Noise")
+            reg_recon_axs[a].imshow(reg["recon"], cmap='gray')
+            reg_recon_axs[a].set_xlabel(str(100 * (1 - snr)) + "% Noise")
+        
+        handles, labels = err_axs[0].get_legend_handles_labels()
+        err_fig.legend(handles, labels, loc='lower center', ncol = 4, 
+                        fontsize=LABEL_FONT_SIZE)
+        err_fig.subplots_adjust(left=0.05, right=0.950, top=0.935, bottom=0.165)
+        
+
             
 
 def exp_6(run): 
@@ -2089,6 +2205,11 @@ def demo(run):
 #Shes a runner shes a track star -----------------------------------------------
 RUN = True
 PLOT = False
+
+TITLE_FONT_SIZE = 20
+XY_LABEL_FONT_SIZE = 20
+LABEL_FONT_SIZE = 14
+
 UQ_PURPLE = "#51247a"
 UQ_GRAY = "#999490"
 UQ_RED = "#e62645"
@@ -2096,9 +2217,7 @@ UQ_BLUE = "#4085c6"
 UQ_YELLOW = "#fbb800"
 if __name__ == "__main__": 
     p = nt.nearestPrime(N)
-    demo(RUN)
-    plt.figure()
-    demo(PLOT)
+
     # print(len(angles))
     # poster_plots(0, 1)
     # mri_ct()
@@ -2108,21 +2227,21 @@ if __name__ == "__main__":
     # exp_2(RUN)
     # exp_2(PLOT)
 
-    #run min comp set - need reg?
-    # exp_4(RUN)
-    # exp_4(PLOT)
-
-    #run prime replacement - done
-    # exp_3(RUN)
-    # exp_3(PLOT)
-
     #run prime katz angle set
     # exp_5(RUN)
     # exp_5(PLOT)
 
     #run prime katz with changing noise
     # exp_5b(RUN)
-    # exp_5b(PLOT)
+    exp_5b(PLOT)
+
+    #run prime replacement - done
+    # exp_3(RUN)
+    # exp_3(PLOT)
+
+    #run min comp set - need reg?
+    # exp_4(RUN)
+    # exp_4(PLOT)
 
     # exp_7(PLOT)
 
